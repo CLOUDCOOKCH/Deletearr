@@ -1,0 +1,1 @@
+{"version":1,"mode":"operate","tokens":{"background":"#141814","surface":"#1b201c","raised":"#242a24","border":"#30372f","text":"#e9eee7","muted":"#a2ada0","accent":"#b0ed83","destructive":"#ffaaa5","font":"Manrope Variable","radius":10},"breakpoints":[640,900,1200],"source":"web/src/style.css"}

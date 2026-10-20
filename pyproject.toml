@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=78"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "deletarr"
+version = "0.1.0"
+description = "Intelligent media retention and automated library cleanup"
+requires-python = ">=3.12"
+license = "AGPL-3.0-or-later"
+dependencies = ["fastapi", "uvicorn", "httpx", "argon2-cffi", "cryptography", "croniter"]
+[tool.setuptools.packages.find]
+include = ["deletarr*"]
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+[tool.ruff]
+line-length = 120
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

@@ -1,0 +1,17 @@
+.git
+.venv
+node_modules
+web/dist
+config
+.env
+**/__pycache__
+.pytest_cache
+.ruff_cache
+attachments
+test-results
+playwright-report
+docs/screenshots
+*.db*
+*.key
+.ruff_cache
+.DS_Store

@@ -1,0 +1,43 @@
+name: deletarr
+services:
+  deletarr:
+    build:
+      context: .
+      args:
+        UID: ${DELETARR_UID:-10001}
+        GID: ${DELETARR_GID:-10001}
+    image: deletarr:local
+    container_name: deletarr
+    restart: unless-stopped
+    init: true
+    user: "${DELETARR_UID:-10001}:${DELETARR_GID:-10001}"
+    ports:
+      - "${DELETARR_BIND:-127.0.0.1}:${DELETARR_PORT:-8980}:8980"
+    environment:
+      DELETARR_CONFIG: /config
+      DELETARR_PORT: "8980"
+      DELETARR_SECURE_COOKIE: ${DELETARR_SECURE_COOKIE:-false}
+      # For HTTPS/reverse proxy deployments, set the exact external origin.
+      # DELETARR_ORIGIN: https://deletarr.example.net
+    volumes:
+      - ${DELETARR_CONFIG_HOST:-./config}:/config
+      # Bind only directories you intend to manage; verify the host mount first.
+      # create_host_path:false prevents Compose creating an empty replacement mount.
+      - type: bind
+        source: ${DELETARR_MOVIES_HOST:?Set DELETARR_MOVIES_HOST to an existing media directory}
+        target: /media/movies
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DELETARR_TV_HOST:?Set DELETARR_TV_HOST to an existing media directory}
+        target: /media/tv
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 120s

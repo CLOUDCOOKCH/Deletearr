@@ -1,0 +1,56 @@
+name: Verify
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: python -m pip install -r requirements-dev.lock
+      - run: ruff check deletarr tests
+      - run: ruff check scripts/container-smoke.py
+      - run: ruff format --check deletarr tests
+      - run: python -m pytest -q
+      - run: pip-audit -r requirements.lock
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Start browser-test instance
+        run: |
+          DELETARR_CONFIG=/tmp/deletarr-ci python -m deletarr > /tmp/deletarr-ci.log 2>&1 &
+          for i in {1..30}; do curl -fsS http://127.0.0.1:8980/api/health && break; sleep 1; done
+      - name: Browser tests
+        run: CHROMIUM_PATH=$(find "$HOME/.cache/ms-playwright" -path '*/chrome-linux*/chrome' -type f | head -1) DELETARR_TEST_CONFIG=/tmp/deletarr-ci/setup-token npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-evidence
+          path: |
+            docs/screenshots/
+            test-results/
+      - run: docker build -t deletarr:test .
+      - run: python scripts/container-smoke.py deletarr:test
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
