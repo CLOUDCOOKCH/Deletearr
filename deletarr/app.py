@@ -30,7 +30,7 @@ from .security import PASSWORDS, SafetyError, Vault, authenticate, new_session, 
 
 
 class Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 def storage_access_error(path, exc):
@@ -514,7 +514,9 @@ def create_app(directory=None, run_worker=True):
         counts = {
             row["kind"]: row["n"] for row in db.all("SELECT kind,COUNT(*) n FROM media WHERE missing=0 GROUP BY kind")
         }
-        files = db.one("SELECT COALESCE(SUM(size),0) bytes,COUNT(*) n FROM files WHERE deleted=0")
+        files = db.one("""SELECT COALESCE(SUM(f.size),0) bytes,COUNT(*) n FROM files f WHERE f.deleted=0
+            AND EXISTS(SELECT 1 FROM media_files mf JOIN media m ON m.id=mf.media_id
+            WHERE mf.file_id=f.id AND m.missing=0)""")
         candidates = db.one(
             "SELECT COUNT(*) n FROM candidates WHERE state NOT IN ('Completed','Rejected','Protected')"
         )["n"]
@@ -593,6 +595,8 @@ def create_app(directory=None, run_worker=True):
             [*args, limit, (page - 1) * limit],
         )
         for row in rows:
+            if row["kind"] in {"show", "season"}:
+                row["size"] = sum(file["size"] for file in catalog.files(row["id"]))
             metadata = json.loads(row.pop("metadata"))
             row["summary"] = metadata.get("summary")
             row["poster"] = "/api/media/" + row["id"] + "/poster" if metadata.get("thumb") else None
@@ -756,9 +760,10 @@ def create_app(directory=None, run_worker=True):
         if not item or item["version"] != data.version:
             raise SafetyError("Candidate changed; reload before acting")
         target = {"approve": "Ready", "reject": "Rejected", "postpone": "Postponed", "keep": "Protected"}[data.action]
-        if target == item["state"]:
+        if target == item["state"] and data.action != "keep":
             return {"ok": True}
-        executor.transition(candidate_id, target, expected_version=data.version)
+        if target != item["state"]:
+            executor.transition(candidate_id, target, expected_version=data.version)
         if data.action == "approve":
             db.execute("UPDATE candidates SET approved_at=? WHERE id=?", (now(), candidate_id))
         elif data.action == "postpone":
@@ -933,7 +938,8 @@ def create_app(directory=None, run_worker=True):
 
     @app.post("/api/jobs")
     def submit_job(data: JobInput):
-        return {"id": worker.enqueue(data.kind)}
+        payload = {"expected_dry_run": db.settings()["dry_run"]} if data.kind in {"cleanup", "pressure"} else None
+        return {"id": worker.enqueue(data.kind, payload)}
 
     @app.post("/api/jobs/{job_id}/cancel")
     def cancel_job(job_id: str):

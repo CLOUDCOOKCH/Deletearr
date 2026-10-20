@@ -108,14 +108,17 @@ class Worker:
         if kind not in KINDS:
             raise SafetyError("Unsupported job kind")
         dedupe = dedupe or kind
-        existing = self.db.one("SELECT id FROM jobs WHERE dedupe=? AND state IN ('queued','running')", (dedupe,))
-        if existing:
-            return existing["id"]
-        ident = uid()
-        self.db.execute(
-            "INSERT INTO jobs(id,kind,payload,state,dedupe,available_at) VALUES(?,?,?,?,?,?)",
-            (ident, kind, encode(payload or {}), "queued", dedupe, now()),
-        )
+        with self.db.transaction() as c:
+            existing = c.execute(
+                "SELECT id FROM jobs WHERE dedupe=? AND state IN ('queued','running')", (dedupe,)
+            ).fetchone()
+            if existing:
+                return existing["id"]
+            ident = uid()
+            c.execute(
+                "INSERT INTO jobs(id,kind,payload,state,dedupe,available_at) VALUES(?,?,?,?,?,?)",
+                (ident, kind, encode(payload or {}), "queued", dedupe, now()),
+            )
         return ident
 
     def start(self):
@@ -181,6 +184,11 @@ class Worker:
 
     async def dispatch(self, job):
         kind = job["kind"]
+        payload = json.loads(job["payload"])
+        expected_mode = payload.get("expected_dry_run", self.db.settings()["dry_run"])
+        if kind in {"cleanup", "pressure"} and "expected_dry_run" in payload:
+            if payload["expected_dry_run"] != self.db.settings()["dry_run"]:
+                raise SafetyError("Deletion mode changed after submission; review and submit again")
         if kind in {"full_sync", "incremental_sync"}:
             await self.catalog.sync(kind == "incremental_sync")
         elif kind == "watch_history":
@@ -240,17 +248,23 @@ class Worker:
                     current = os.statvfs(root["path"])
                     if current.f_bavail * current.f_frsize >= result["target_bytes"]:
                         break
-                    result = await self.executor.execute(
-                        plan["id"], plan["digest"], job["id"] + ":" + plan["id"], job_id=job["id"]
+                    operation = await self.executor.execute(
+                        plan["id"],
+                        plan["digest"],
+                        job["id"] + ":" + plan["id"],
+                        job_id=job["id"],
+                        expected_dry_run=expected_mode,
                     )
-                    if result["state"] != "Completed":
+                    if operation["state"] != "Completed":
                         raise SafetyError("Pressure cleanup requires reconciliation; remaining work stopped")
         elif kind == "cleanup":
             payload = json.loads(job["payload"])
             if payload.get("plan_id"):
                 if payload.get("expected_dry_run") != self.db.settings()["dry_run"]:
                     raise SafetyError("Deletion mode changed after submission; review and submit again")
-                result = await self.executor.execute(payload["plan_id"], payload["digest"], job["id"], job_id=job["id"])
+                result = await self.executor.execute(
+                    payload["plan_id"], payload["digest"], job["id"], job_id=job["id"], expected_dry_run=expected_mode
+                )
                 if result["state"] != "Completed":
                     raise SafetyError("Cleanup operation requires reconciliation; inspect its checkpoints")
             else:
@@ -267,7 +281,11 @@ class Worker:
                     if self.stop.is_set() or cancelled["cancel_requested"]:
                         break
                     result = await self.executor.execute(
-                        plan["id"], plan["digest"], job["id"] + ":" + plan["id"], job_id=job["id"]
+                        plan["id"],
+                        plan["digest"],
+                        job["id"] + ":" + plan["id"],
+                        job_id=job["id"],
+                        expected_dry_run=expected_mode,
                     )
                     if result["state"] != "Completed":
                         raise SafetyError("Cleanup operation requires reconciliation; remaining work stopped")
@@ -306,7 +324,8 @@ class Worker:
                 try:
                     await self.dispatch(dict(job))
                     self.db.execute(
-                        "UPDATE jobs SET state='completed',finished_at=?,error=NULL WHERE id=?", (now(), job["id"])
+                        "UPDATE jobs SET state=CASE WHEN cancel_requested=1 THEN 'cancelled' ELSE 'completed' END,finished_at=?,error=NULL WHERE id=?",
+                        (now(), job["id"]),
                     )
                 except Exception as exc:
                     message = (

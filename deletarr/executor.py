@@ -360,11 +360,13 @@ class Executor:
                         "availability": "available" if complete else "partial" if remaining else "unknown",
                     },
                 )
-        self.db.execute("UPDATE operations SET state='Completed',updated_at=? WHERE id=?", (now(), operation))
+        self.db.execute(
+            "UPDATE operations SET state='Completed',error=NULL,updated_at=? WHERE id=?", (now(), operation)
+        )
         self.transition(snapshot["candidate_id"], "Completed")
         self.notifications.emit("cleanup_completed", f"Cleanup completed: {snapshot['title']}")
 
-    async def execute(self, plan_id, digest, idempotency_key, job_id=None):
+    async def execute(self, plan_id, digest, idempotency_key, job_id=None, expected_dry_run=None):
         async with self.lock:
             previous = self.db.one("SELECT * FROM operations WHERE idempotency_key=?", (idempotency_key,))
             if previous:
@@ -383,10 +385,12 @@ class Executor:
             self.transition(candidate["id"], "Validating")
             try:
                 snapshot = await self.validate(plan)
+                dry_run = self.db.settings()["dry_run"]
+                if expected_dry_run is not None and dry_run != expected_dry_run:
+                    raise SafetyError("Deletion mode changed after submission; review and submit again")
             except Exception:
                 self.transition(candidate["id"], "Protected", {"reason": "Final validation refused execution"})
                 raise
-            dry_run = self.db.settings()["dry_run"]
             operation = uid()
             self.db.execute(
                 "INSERT INTO operations(id,plan_id,idempotency_key,state,dry_run,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
@@ -511,6 +515,12 @@ class Executor:
             return self.db.one("SELECT * FROM operations WHERE id=?", (operation,))
 
     async def reconcile(self):
+        async with self.lock:
+            if self.stopping:
+                raise SafetyError("Application is shutting down")
+            await self._reconcile()
+
+    async def _reconcile(self):
         for task in self.db.all("SELECT * FROM reconciliation WHERE state='pending'"):
             operation = self.db.one("SELECT * FROM operations WHERE id=?", (task["operation_id"],))
             plan = self.db.one("SELECT * FROM plans WHERE id=?", (operation["plan_id"],))
@@ -520,19 +530,13 @@ class Executor:
             # Reconciliation is read-only for ambiguous physical requests. Never reissue DELETE.
             all_absent = True
             for file in snapshot["files"]:
-                self.fs.root(file["root_id"])
-                with self.fs.parent(file["root_id"], file["path"]) as (fd, name):
-                    try:
-                        os.stat(name, dir_fd=fd, follow_symlinks=False)
-                        all_absent = False
-                    except FileNotFoundError:
-                        if "file:" + file["id"] not in {c["name"] for c in checkpoints}:
-                            all_absent = False
-                        else:
-                            self.db.execute("UPDATE files SET deleted=1 WHERE id=?", (file["id"],))
-                            self.checkpoint(
-                                operation["id"], "file:" + file["id"], "confirmed", {"reconciled_absent": True}
-                            )
+                if self.fs.exists(file["root_id"], file["path"]):
+                    all_absent = False
+                elif "file:" + file["id"] not in {c["name"] for c in checkpoints}:
+                    all_absent = False
+                else:
+                    self.db.execute("UPDATE files SET deleted=1 WHERE id=?", (file["id"],))
+                    self.checkpoint(operation["id"], "file:" + file["id"], "confirmed", {"reconciled_absent": True})
             remove_pending = any(c["name"].startswith("remove:") and c["state"] != "confirmed" for c in checkpoints)
             if snapshot["strategy"] == "remove":
                 expected_removes = {
@@ -548,5 +552,14 @@ class Executor:
             try:
                 await self.synchronize(operation["id"], snapshot)
                 self.db.execute("UPDATE reconciliation SET state='resolved' WHERE id=?", (task["id"],))
-            except SafetyError:
+            except Exception as exc:
                 self.transition(candidate["id"], "ReconciliationRequired")
+                message = (
+                    str(exc)
+                    if isinstance(exc, SafetyError)
+                    else "Synchronization failed; inspect integration health and retry reconciliation"
+                )
+                self.db.execute(
+                    "UPDATE operations SET state='ReconciliationRequired',error=?,updated_at=? WHERE id=?",
+                    (message, now(), operation["id"]),
+                )

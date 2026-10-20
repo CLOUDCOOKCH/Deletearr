@@ -63,14 +63,22 @@ function useData<T = any>(path: string, revision = 0) {
   useEffect(() => {
     let active = true;
     setError("");
-    const fetchData = () =>
-      api<T>(path)
-        .then((x) => {
-          if (active) setData(x);
-        })
-        .catch((e) => {
-          if (active) setError(e.message);
-        });
+    let fetching = false;
+    const fetchData = async () => {
+      if (fetching) return;
+      fetching = true;
+      try {
+        const result = await api<T>(path);
+        if (active) {
+          setData(result);
+          setError("");
+        }
+      } catch (error) {
+        if (active) setError((error as Error).message);
+      } finally {
+        fetching = false;
+      }
+    };
     fetchData();
     const timer =
       /^\/(dashboard|candidates|jobs|history|notifications|streams)/.test(path)
@@ -410,6 +418,7 @@ function App() {
     api("/auth/status")
       .then((s) => {
         setStatus(s);
+        setFatal("");
         if (s.csrf) setCsrf(s.csrf);
       })
       .catch((e) => setFatal(e.message));
@@ -3745,9 +3754,10 @@ function IntegrationForm({
             Save connection
           </Button>
           <Button
-            disabled={!existing}
+            disabled={busy || !existing}
             onClick={async () => {
               setBusy(true);
+              setError("");
               try {
                 const r = await api(
                   "/integrations/" + kind + "/test",

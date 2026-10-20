@@ -4,13 +4,13 @@ This checkout is an implemented release candidate, not a claim of completed live
 
 ## Local evidence
 
-- Backend behavioral suite: 73 tests passed, including shared-season deletion, file reimports requiring fresh approval, read-only mapping suggestions, current source metadata, and integration configuration changes.
-- Browser workflow: passed against the real FastAPI backend and built React application, covering authentication, rule creation/simulation, all main navigation pages, dry-run defaults, mobile menu, no horizontal overflow and console exceptions.
+- Backend behavioral suite: 114 tests passed, including shared-season deletion, file reimports requiring fresh approval, read-only mapping suggestions, current source metadata, and integration configuration changes.
+- Seven browser workflows: passed against the real FastAPI backend and built React application, covering authentication, rule creation/simulation, all main navigation pages, dry-run defaults, mobile menu, no horizontal overflow and console exceptions.
 - Production frontend build, Python Ruff checks and Prettier formatting: passed.
 - npm audit: zero known vulnerabilities after updating Vite/esbuild to patched releases.
 - pip-audit of `requirements.lock`: no known vulnerabilities found.
 - Linux AMD64 Docker image: built successfully; non-root, read-only rootfs, dropped capabilities and no external network smoke test passed health, static UI, authentication, dry-run, private config permissions and administrator/database persistence after restart.
-- Desktop/mobile captures are retained in `docs/screenshots/` and visually inspected. The unavailable skill launcher prevented its separate automated design-review workflow; visual review was performed directly. This is not an accessibility certification.
+- Desktop/mobile captures are retained in `docs/screenshots/` and visually inspected. Visual checks cover the current responsive shell; functional recovery is additionally checked through browser regression tests. This is not an accessibility certification.
 
 ## Safety test coverage
 
@@ -25,11 +25,27 @@ Tests exercise unknown/NOT logic, typed rule validation, excluded libraries, exp
 | Sonarr live API/file deletion | Not live-tested. Verify episode IDs, season scopes, specials/shared releases and import exclusions on the deployed supported API version. |
 | Seerr availability | Not live-tested. Verify recent-request season scope and aggregate partial/deleted behavior. Mixed 4K/per-season repair remains manual reconciliation. |
 | Discord/Telegram/webhook delivery | Contract implementation present; actual account/webhook delivery not verified without credentials. |
-| ARM64 | Multi-architecture build workflow configured; all 25 locked dependencies resolved to compatible Linux ARM64 or architecture-independent wheels. ARM64 container execution and ARM NAS hardware remain unverified (no local binfmt emulation). |
+| ARM64 | AMD64 and ARM64 preview images build successfully in CI. ARM64 container execution and ARM NAS hardware remain unverified (no local binfmt emulation). |
 | SMB/NFS/UGOS Pro | Not hardware-tested. Verify mount disconnects, stable identities, hardlinks, ACLs, fsync/unlink semantics and host snapshot behavior with expendable media. |
-| Registry publication | Not performed. Configure repository release environment, run CI gates and publish a versioned release deliberately. |
+| Registry publication | Public GHCR preview images and immutable commit tags are published by the preview workflow. A versioned production release remains a separate gate. |
 | Capacity/performance/accessibility | No large-library load, screen-reader or formal accessibility audit. Profile on the intended host. |
 
 Never equate green mock contracts with a verified live integration. Keep dry-run enabled until the appropriate gates have been checked using expendable test content and reviewed plans.
 
-Validation performed on Linux AMD64, Python 3.12 and Node 24 on 2026-10-19. Source distribution and license texts are included in the non-root image. The local Compose configuration parses successfully. No registry push, release publication or live-library deletion was performed.
+Validation performed on Linux AMD64, Python 3.12 and Node 24 on 2026-10-20. Source distribution and license texts are included in the non-root image. The local Compose configuration parses successfully. Preview registry publication is verified; no versioned production release or live-library deletion was performed by these checks.
+
+## Repository review regressions
+
+The October 20 review covered the Python modules, React views/helpers, deployment configuration, workflows, locked dependencies and contributor documentation. Existing checks passed before targeted reproductions exposed additional edge cases. Fixes have regression coverage for:
+
+- Multiple storage-pressure plans retaining the same recovery target.
+- Atomic duplicate prevention when background jobs are submitted concurrently, plus executor locking during reconciliation to prevent conflicting manual resolutions.
+- Manual cleanup/pressure submissions retaining their requested dry-run/live mode, including a mode change during asynchronous validation.
+- Keep Forever applying permanent media protection even when a candidate is already temporarily protected.
+- Reconciliation recognizing an absent file after its parent folder was removed, retaining mount validation, and recovering after unexpected synchronization errors without repeating physical deletion.
+- Clearing recovered operation errors, transient dashboard polling errors and initial sign-in connectivity errors.
+- Rejecting non-finite rule/storage values.
+- Aggregating show/season sizes without double-counting shared episode files, and excluding detached file records from current indexed-storage metrics while preserving history.
+- Reporting running-job cancellation as cancelled rather than completed.
+
+Green tests describe these reproducible cases, not proof that every possible defect or live-service incompatibility has been eliminated.

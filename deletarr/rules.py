@@ -10,7 +10,7 @@ from .security import SafetyError
 
 
 class Condition(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     group: Literal["and", "or", "not"] | None = None
     children: list["Condition"] = Field(default_factory=list, max_length=20)
     field: (
@@ -177,7 +177,6 @@ class Engine:
 
     def values(self, item, at):
         nodes = [x for x in self.catalog.descendants(item["id"]) if x["kind"] in {"movie", "episode"}]
-        any(n["watch_count"] > 0 for n in nodes)
         # For a season/show last-watched uses latest event, and all leaves must have affirmative watch evidence.
         aggregate_complete = bool(nodes) and all(n["watch_count"] > 0 and n["history_visible"] for n in nodes)
         last = max((n["last_watched"] or 0 for n in nodes), default=0)

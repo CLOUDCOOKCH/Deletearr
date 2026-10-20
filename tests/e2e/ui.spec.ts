@@ -505,3 +505,46 @@ test("real application: onboarding, CRUD, safe defaults, desktop and mobile", as
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("reconnect recovers from an initial authentication-status outage", async ({
+  page,
+}) => {
+  let first = true;
+  await page.route("**/api/auth/status", (route) => {
+    if (first) {
+      first = false;
+      return route.fulfill({
+        status: 503,
+        json: { error: "Temporary sign-in outage" },
+      });
+    }
+    return route.continue();
+  });
+  await page.goto("/");
+  await expect(page.getByRole("alert")).toHaveText("Temporary sign-in outage");
+  await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+  await expect(page.getByLabel("Username", { exact: true })).toBeVisible();
+  await expect(page.getByText("Temporary sign-in outage")).toHaveCount(0);
+});
+
+test("dashboard polling clears a recovered request error", async ({ page }) => {
+  await signIn(page);
+  let requests = 0;
+  await page.route("**/api/dashboard", (route) => {
+    requests++;
+    return requests === 1
+      ? route.fulfill({
+          status: 503,
+          json: { error: "Temporary dashboard outage" },
+        })
+      : route.continue();
+  });
+  await page.reload();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Temporary dashboard outage",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible({ timeout: 12000 });
+  await expect(page.getByText("Temporary dashboard outage")).toHaveCount(0);
+});
