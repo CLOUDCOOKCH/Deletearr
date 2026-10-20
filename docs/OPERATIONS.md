@@ -2,7 +2,7 @@
 
 ## Modes and authority
 
-First installation is dry-run. Simulations perform reads and record plans/results without unmonitoring, deletion or Seerr availability writes. Live enrollment requires the administrator password and the phrase shown in Deletion Safety. A queued manual simulation cannot become live because mode changed after submission. Scheduled live jobs operate only on currently authorized rule actions, approvals and expired grace periods.
+First installation is dry-run. Simulations perform reads and record plans/results without unmonitoring, deletion or Seerr availability writes. Live enrollment requires the administrator password and the acknowledgment checkbox shown in Deletion Safety. A queued manual simulation cannot become live because mode changed after submission. Scheduled live jobs operate only on currently authorized rule actions, approvals and expired grace periods.
 
 Manual plan confirmation includes the number of movie/episode leaves and the exact sum of logical bytes. It is not a claim about secure erasure or physically reclaimed space. Approvals, grace deadlines and postponements are checked again at execution time. Editing a rule increments its version, invalidates old approval state, queues reevaluation and makes stale plans unusable.
 

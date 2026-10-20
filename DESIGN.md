@@ -8,6 +8,6 @@ Tokens: background `#141814`; surface `#1b201c`; raised `#242a24`; border `#3037
 
 Desktop uses a 232px fixed sidebar, 74px topbar and 38px content padding. Breakpoints at 1200/900/640px progressively stack panels and controls; compact navigation becomes a toggle-controlled sidebar. Hidden compact navigation is inert. Operational sections use one border and 10px radius; controls use 6px radius, visible focus rings and disabled states.
 
-Form controls have explicit labels with separate help descriptions. Native dialogs preserve focus and Escape behavior. Network failures are visible and actionable; dry-run/live state is present in the application header. Live activation is a protected-focus destructive flow with password and exact phrase. Exact-plan inspection precedes confirmation of count and bytes.
+Form controls have explicit labels with separate help descriptions. Native dialogs preserve focus and Escape behavior. Network failures are visible and actionable; dry-run/live state is present in the application header. Live activation is a protected-focus destructive flow with password and an explicit acknowledgment checkbox. Exact-plan inspection precedes confirmation of count and bytes.
 
 Motion is limited to brief state transitions and reduced-motion preferences are respected. Screenshot evidence must wait for menu transitions and dismiss transient notifications before claiming a stable viewport.

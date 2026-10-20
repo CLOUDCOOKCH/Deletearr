@@ -383,6 +383,13 @@ const nav = [
   ["Notifications", Bell],
   ["Settings", SettingsIcon],
 ] as const;
+function pageFromHash() {
+  try {
+    return decodeURIComponent(location.hash.slice(1)) || "Dashboard";
+  } catch {
+    return "Dashboard";
+  }
+}
 function App() {
   const [smallScreen, setSmallScreen] = useState(window.innerWidth <= 640);
   useEffect(() => {
@@ -392,7 +399,7 @@ function App() {
     return () => query.removeEventListener("change", update);
   }, []);
   const [status, setStatus] = useState<Row | null>(null),
-    [page, setPage] = useState(location.hash.slice(1) || "Dashboard"),
+    [page, setPage] = useState(pageFromHash),
     [revision, setRevision] = useState(0),
     [toast, setToast] = useState<{ text: string; error: boolean } | null>(null),
     [mobile, setMobile] = useState(false),
@@ -432,7 +439,7 @@ function App() {
     }
   }, [settings.data]);
   useEffect(() => {
-    const listener = () => setPage(location.hash.slice(1) || "Dashboard");
+    const listener = () => setPage(pageFromHash());
     window.addEventListener("hashchange", listener);
     return () => window.removeEventListener("hashchange", listener);
   }, []);
@@ -1851,6 +1858,30 @@ function Rules({ revision, refresh }: Props) {
     </>
   );
 }
+function CandidateArtwork({
+  poster,
+  title,
+}: {
+  poster?: string;
+  title: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [poster]);
+  return (
+    <div className="candidate-art">
+      {poster && !failed ? (
+        <img
+          src={poster}
+          alt={`${title} poster`}
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <Film size={27} aria-label="Poster unavailable" />
+      )}
+    </div>
+  );
+}
 function Queue({ revision, refresh, open }: Props) {
   const [state, setState] = useState(""),
     [q, setQ] = useState(""),
@@ -1978,9 +2009,7 @@ function Queue({ revision, refresh, open }: Props) {
                   })
                 }
               />
-              <div className="candidate-art">
-                <Film size={27} />
-              </div>
+              <CandidateArtwork poster={c.poster} title={c.title} />
               <div className="candidate-main">
                 <button
                   className="title-button"
@@ -1990,6 +2019,11 @@ function Queue({ revision, refresh, open }: Props) {
                 </button>
                 <p>
                   {c.rule_name} · {c.library}
+                </p>
+                <p className="candidate-watch">
+                  Last watched:{" "}
+                  {c.last_watched ? date(c.last_watched) : "Unknown"}
+                  {!c.history_visible && " · History incomplete"}
                 </p>
                 <div className="candidate-meta">
                   <Badge tone={c.state === "Ready" ? "green" : "neutral"}>
@@ -2654,6 +2688,8 @@ const settingTabs = [
 function SettingsPage({ revision, refresh, navigate }: Props) {
   const [tab, setTab] = useState("Setup"),
     [live, setLive] = useState(false),
+    [liveError, setLiveError] = useState(""),
+    [liveBusy, setLiveBusy] = useState(false),
     [plexPending, setPlexPending] = useState(false);
   const { data: s, error } = useData<Row>("/settings", revision);
   const integrations = useData<Row[]>("/integrations", revision),
@@ -3329,9 +3365,20 @@ function SettingsPage({ revision, refresh, navigate }: Props) {
             onSubmit={async (e) => {
               e.preventDefault();
               const f = new FormData(e.currentTarget);
-              await act("/settings/live", "POST", Object.fromEntries(f));
-              setLive(false);
-              refresh();
+              setLiveError("");
+              setLiveBusy(true);
+              try {
+                await api("/settings/live", "POST", {
+                  password: f.get("password"),
+                  acknowledge_permanent_deletion: f.get("acknowledge") === "on",
+                });
+                setLive(false);
+                refresh();
+              } catch (error) {
+                setLiveError((error as Error).message);
+              } finally {
+                setLiveBusy(false);
+              }
             }}
           >
             <Field label="Administrator password">
@@ -3342,16 +3389,16 @@ function SettingsPage({ revision, refresh, navigate }: Props) {
                 autoComplete="current-password"
               />
             </Field>
-            <Field
-              label="Type the full confirmation phrase"
-              help="I UNDERSTAND DELETARR WILL PERMANENTLY DELETE MY MEDIA"
-            >
-              <input name="confirmation" required autoComplete="off" />
-            </Field>
+            <label className="checkbox">
+              <input name="acknowledge" type="checkbox" required />I understand
+              that live cleanup permanently deletes media with no recovery
+              folder.
+            </label>
+            <ErrorBox text={liveError} />
             <div className="modal-actions">
               <Button onClick={() => setLive(false)}>Keep dry-run</Button>
-              <Button kind="danger" type="submit">
-                Enable live deletion
+              <Button kind="danger" type="submit" disabled={liveBusy}>
+                {liveBusy ? "Enabling…" : "Enable live deletion"}
               </Button>
             </div>
           </form>

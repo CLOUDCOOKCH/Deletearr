@@ -48,7 +48,7 @@ deliberate GitHub release. Preview builds are for testing, not production certif
 8. Add sync, evaluation, health, reconciliation and cleanup schedules as appropriate.
 9. Complete setup in **dry-run mode**.
 
-Permanent deletion is off on first installation. Enabling it requires the administrator password and the full permanent-deletion confirmation phrase in Settings → Deletion Safety. Manual live execution also confirms affected item count and exact logical bytes. Files removed by Deletarr have no Deletarr trash, quarantine or recovery folder. Unlinking is not secure erasure.
+Permanent deletion is off on first installation. Enabling it requires the administrator password and an explicit permanent-deletion acknowledgment checkbox in Settings → Deletion Safety. Manual live execution also confirms affected item count and exact logical bytes. Files removed by Deletarr have no Deletarr trash, quarantine or recovery folder. Unlinking is not secure erasure.
 
 ## Features
 

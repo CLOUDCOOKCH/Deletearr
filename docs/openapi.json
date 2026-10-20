@@ -2398,17 +2398,17 @@
             "type": "string",
             "title": "Password"
           },
-          "confirmation": {
-            "type": "string",
-            "const": "I UNDERSTAND DELETARR WILL PERMANENTLY DELETE MY MEDIA",
-            "title": "Confirmation"
+          "acknowledge_permanent_deletion": {
+            "type": "boolean",
+            "const": true,
+            "title": "Acknowledge Permanent Deletion"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "password",
-          "confirmation"
+          "acknowledge_permanent_deletion"
         ],
         "title": "LiveInput"
       },

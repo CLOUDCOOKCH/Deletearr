@@ -6,6 +6,41 @@ import pytest
 from deletarr.security import SafetyError, resolve_url, token_hash
 
 
+def test_live_mode_requires_password_and_explicit_acknowledgment(system):
+    endpoint = "/api/settings/live"
+    for body in [
+        {"password": "long-local-password"},
+        {"password": "long-local-password", "acknowledge_permanent_deletion": False},
+        {"password": "wrong", "acknowledge_permanent_deletion": True},
+    ]:
+        assert system.client.post(endpoint, json=body).status_code in {409, 422}
+        assert system.db.settings()["dry_run"] is True
+    response = system.client.post(
+        endpoint,
+        json={
+            "password": "long-local-password",
+            "acknowledge_permanent_deletion": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["dry_run"] is False
+    assert response.json()["live_enrolled"] is True
+    assert system.client.post("/api/settings/dry-run", json={}).json()["dry_run"] is True
+
+
+def test_live_mode_still_requires_authorized_storage(system):
+    system.db.execute("UPDATE roots SET confirmed=0")
+    response = system.client.post(
+        "/api/settings/live",
+        json={
+            "password": "long-local-password",
+            "acknowledge_permanent_deletion": True,
+        },
+    )
+    assert response.status_code == 409
+    assert system.db.settings()["dry_run"] is True
+
+
 def test_setup_is_single_admin_and_session_secure(system):
     assert (
         system.client.post(

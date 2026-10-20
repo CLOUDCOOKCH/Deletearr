@@ -129,7 +129,7 @@ class SettingsInput(Strict):
 
 class LiveInput(Strict):
     password: str
-    confirmation: Literal["I UNDERSTAND DELETARR WILL PERMANENTLY DELETE MY MEDIA"]
+    acknowledge_permanent_deletion: Literal[True]
 
 
 class ReconciliationInput(Strict):
@@ -738,6 +738,13 @@ def create_app(directory=None, run_worker=True):
         for row in rows:
             row["files"] = catalog.files(row["media_id"])
             row["logical_bytes"] = sum(f["size"] for f in row["files"])
+            leaves = [m for m in catalog.descendants(row["media_id"]) if m["kind"] in {"movie", "episode"}]
+            row["last_watched"] = max((m["last_watched"] or 0 for m in leaves), default=0) or None
+            row["history_visible"] = bool(leaves) and all(m["history_visible"] for m in leaves)
+            ancestors = catalog.ancestors(row["media_id"])
+            artwork = sorted(ancestors, key=lambda m: m["kind"] != "show")
+            source = next((m for m in artwork if json.loads(m["metadata"]).get("thumb")), None)
+            row["poster"] = f"/api/media/{source['id']}/poster" if source else None
         return {
             "items": rows,
             "total": db.one("SELECT COUNT(*) n FROM candidates c JOIN media m ON m.id=c.media_id " + where, args)["n"],

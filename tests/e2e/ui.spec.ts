@@ -3,6 +3,134 @@ import { readFileSync, mkdirSync } from "node:fs";
 const origin = process.env.DELETARR_TEST_URL || "http://127.0.0.1:8980";
 const password = "UI-test-only-password-1234";
 
+test("cleanup queue displays posters, watch dates and missing-history states", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" });
+  await signIn(page);
+  await page.route("**/api/candidates?*", (route) =>
+    route.fulfill({
+      json: {
+        total: 2,
+        items: [
+          {
+            id: "movie",
+            media_id: "movie",
+            title: "Queue movie",
+            kind: "movie",
+            library: "Movies",
+            rule_name: "Watched 90 days",
+            state: "PendingApproval",
+            version: 1,
+            files: [],
+            logical_bytes: 0,
+            reason: "{}",
+            last_watched: 1751328000,
+            history_visible: true,
+            poster: "/api/media/movie/poster",
+          },
+          {
+            id: "show",
+            media_id: "show",
+            title: "Queue series",
+            kind: "show",
+            library: "TV",
+            rule_name: "Series rule",
+            state: "PendingApproval",
+            version: 1,
+            files: [],
+            logical_bytes: 0,
+            reason: "{}",
+            last_watched: null,
+            history_visible: false,
+            poster: "/api/media/show/poster",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/media/movie/poster", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="240"><rect width="160" height="240" fill="#455c40"/><text x="80" y="120" text-anchor="middle" fill="white" font-size="16">Poster fixture</text></svg>',
+    }),
+  );
+  await page.route("**/api/media/show/poster", (route) =>
+    route.fulfill({ status: 404 }),
+  );
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("button", { name: "Cleanup Queue", exact: true })
+    .click();
+  await expect(page.getByAltText("Queue movie poster")).toBeVisible();
+  await expect(page.getByText(/Last watched:.*2025/)).toBeVisible();
+  await expect(
+    page.getByText("Last watched: Unknown · History incomplete"),
+  ).toBeVisible();
+  await expect(page.getByLabel("Poster unavailable")).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.screenshot({
+    path: "test-results/queue-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByAltText("Queue movie poster")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: "test-results/queue-mobile.png",
+    fullPage: true,
+  });
+});
+
+test("live-mode checkbox replaces typed phrase and errors remain visible", async ({
+  page,
+}) => {
+  await signIn(page);
+  let attempts = 0;
+  await page.route("**/api/settings/live", (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      password,
+      acknowledge_permanent_deletion: true,
+    });
+    attempts++;
+    return route.fulfill(
+      attempts === 1
+        ? { status: 409, json: { error: "Administrator password invalid" } }
+        : { json: { dry_run: false } },
+    );
+  });
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("button", { name: "Settings", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Deletion Safety", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Enable live deletion…", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByText("Type the full confirmation phrase"),
+  ).toHaveCount(0);
+  await dialog.getByLabel("Administrator password").fill(password);
+  await dialog.getByRole("checkbox").check();
+  await dialog
+    .getByRole("button", { name: "Enable live deletion", exact: true })
+    .click();
+  await expect(
+    dialog.getByText("Administrator password invalid"),
+  ).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Enable live deletion", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+});
+
 test("Plex connection sign-in, server selection and responsive settings", async ({
   page,
 }) => {

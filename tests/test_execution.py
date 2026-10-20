@@ -10,7 +10,7 @@ def live(system):
         "/api/settings/live",
         json={
             "password": "long-local-password",
-            "confirmation": "I UNDERSTAND DELETARR WILL PERMANENTLY DELETE MY MEDIA",
+            "acknowledge_permanent_deletion": True,
         },
     )
     assert response.status_code == 200, response.text
