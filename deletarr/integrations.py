@@ -9,7 +9,8 @@ from urllib.parse import quote
 
 import httpx
 
-from .db import now
+from . import __version__
+from .db import now, uid
 from .security import SafetyError, resolve_url
 
 MAX_RESPONSE = 32 * 1024 * 1024
@@ -21,14 +22,20 @@ def tls_context(cafile):
 
 
 class HTTP:
-    def __init__(self, url, headers, private=False, timeout=15, transport=None):
+    def __init__(self, url, headers, private=False, timeout=15, transport=None, service="Integration"):
         self.url, self.headers, self.private, self.timeout = url.rstrip("/"), headers, private, timeout
         self.transport = transport
+        self.service = service
 
     async def request(self, method, path, **kwargs):
         allow_text = kwargs.pop("allow_text", False)
         if not path.startswith("/") or path.startswith("//") or ".." in path.split("/"):
             raise SafetyError("Invalid integration endpoint")
+        # Only Plex's known API paths are diagnostic-safe. Other adapters may
+        # carry credentials in paths (for example Telegram bot URLs).
+        context = self.service
+        if self.service in {"Plex", "Plex account"}:
+            context += f" {method} {path.split('?')[0]}"
         for attempt in range(3 if method == "GET" else 1):
             try:
                 target = httpx.URL(self.url + path)
@@ -54,7 +61,7 @@ class HTTP:
                         if response.status_code == 404:
                             return None
                         if response.status_code >= 300:
-                            raise SafetyError(f"Integration returned HTTP {response.status_code}")
+                            raise SafetyError(f"{context} returned HTTP {response.status_code}")
                         data = bytearray()
                         async for chunk in response.aiter_bytes():
                             data.extend(chunk)
@@ -72,8 +79,18 @@ class HTTP:
                             raise SafetyError("Integration returned invalid JSON") from exc
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
                 if attempt + 1 == (3 if method == "GET" else 1):
+                    if method == "GET":
+                        reason = (
+                            "TLS certificate validation failed; use a hostname matching the certificate or local HTTP"
+                            if isinstance(exc.__cause__, ssl.SSLCertVerificationError)
+                            or "CERTIFICATE_VERIFY_FAILED" in str(exc)
+                            else "request timed out"
+                            if isinstance(exc, httpx.TimeoutException)
+                            else "connection failed; check the server address, port and container network access"
+                        )
+                        raise SafetyError(f"{context}: {reason}") from exc
                     raise SafetyError(
-                        "Integration request failed; inspect remote state before retrying a mutation"
+                        f"{context} request failed; inspect remote state before retrying a mutation"
                     ) from exc
                 await asyncio.sleep(0.2 * 2**attempt)
 
@@ -128,7 +145,7 @@ class Plex:
 
     async def history_visibility(self):
         identity = await self.identity()
-        account = HTTP("https://plex.tv", self.http.headers, transport=self.http.transport)
+        account = HTTP("https://plex.tv", self.http.headers, transport=self.http.transport, service="Plex account")
         resources = await account.request("GET", "/api/v2/resources", params={"includeHttps": 1})
         if not isinstance(resources, list):
             return False
@@ -302,6 +319,14 @@ class Seerr:
 class Integrations:
     def __init__(self, db, vault):
         self.db, self.vault = db, vault
+        # Stable per installation, independent of API tokens and browser sessions.
+        path = db.directory / "plex-client-id"
+        with db.lock:
+            if not path.exists():
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                with os.fdopen(fd, "w") as file:
+                    file.write(uid())
+            self.plex_client_id = path.read_text().strip()
 
     def get(self, kind):
         row = self.db.one("SELECT * FROM integrations WHERE kind=?", (kind,))
@@ -309,7 +334,17 @@ class Integrations:
             raise SafetyError(f"{kind.capitalize()} integration is not configured")
         secret = self.vault.decrypt(row["secret"])
         headers = {"Accept": "application/json", "X-Plex-Token" if kind == "plex" else "X-Api-Key": secret}
-        http = HTTP(row["url"], headers, bool(row["allow_private"]), row["timeout"])
+        if kind == "plex":
+            headers.update(
+                {
+                    "X-Plex-Client-Identifier": self.plex_client_id,
+                    "X-Plex-Product": "Deletarr",
+                    "X-Plex-Version": __version__,
+                    "X-Plex-Platform": "Linux",
+                    "X-Plex-Device": "Docker",
+                }
+            )
+        http = HTTP(row["url"], headers, bool(row["allow_private"]), row["timeout"], service=kind.capitalize())
         return {"plex": Plex, "radarr": Radarr, "sonarr": Sonarr, "seerr": Seerr}[kind](http)
 
     def configured(self, kind):

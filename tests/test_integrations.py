@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from deletarr.integrations import HTTP, Plex, Radarr, Seerr, Sonarr
+from deletarr.integrations import HTTP, Integrations, Plex, Radarr, Seerr, Sonarr
 from deletarr.security import SafetyError
 
 
@@ -37,6 +37,66 @@ async def test_mutation_timeout_is_never_retried():
     with pytest.raises(SafetyError, match="inspect remote state"):
         await Radarr(client(handle)).delete_file(2)
     assert len(calls) == 1
+
+
+async def test_plex_account_request_identifies_installation(system):
+    integrations = system.app.state.integrations
+    response = system.client.put(
+        "/api/integrations/plex",
+        json={
+            "url": "http://192.168.1.235:32400",
+            "secret": "private-plex-token",
+            "allow_private": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    adapter = integrations.get("plex")
+    identifier = adapter.http.headers["X-Plex-Client-Identifier"]
+    assert identifier == Integrations(system.db, integrations.vault).plex_client_id
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        assert request.headers["X-Plex-Client-Identifier"] == identifier
+        assert request.headers["X-Plex-Product"] == "Deletarr"
+        assert request.headers["X-Plex-Token"] == "private-plex-token"
+        if request.url.path == "/identity":
+            return httpx.Response(200, json={"MediaContainer": {"machineIdentifier": "server-1"}})
+        return httpx.Response(200, json=[{"clientIdentifier": "server-1", "owned": True}])
+
+    adapter.http.transport = httpx.MockTransport(handle)
+    assert await adapter.history_visibility()
+    assert calls[-1].url.host == "plex.tv"
+
+
+async def test_plex_http_error_identifies_endpoint_without_secret():
+    http = HTTP(
+        "https://plex.tv",
+        {"X-Plex-Token": "private-token"},
+        transport=httpx.MockTransport(lambda _: httpx.Response(400, text="private-token")),
+        service="Plex account",
+    )
+    with pytest.raises(SafetyError, match=r"Plex account GET /api/v2/resources returned HTTP 400") as error:
+        await http.request("GET", "/api/v2/resources")
+    assert "private-token" not in str(error.value)
+
+
+async def test_read_timeout_does_not_warn_about_mutations(monkeypatch):
+    async def no_sleep(_):
+        pass
+
+    monkeypatch.setattr("deletarr.integrations.asyncio.sleep", no_sleep)
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        raise httpx.ReadTimeout("private-token", request=request)
+
+    with pytest.raises(SafetyError, match="request timed out") as error:
+        await client(handle).request("GET", "/identity")
+    assert len(calls) == 3
+    assert "mutation" not in str(error.value)
+    assert "private-token" not in str(error.value)
 
 
 async def test_radarr_unmonitor_verifies_postcondition():
