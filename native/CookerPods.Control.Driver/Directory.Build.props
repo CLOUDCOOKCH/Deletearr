@@ -1,9 +1,0 @@
-<Project>
-  <!-- Separate from native/Directory.Build.props: this is a WDK C project. -->
-  <PropertyGroup><CpKitVersion>10.0.26100.6584</CpKitVersion><CpPackages>$(MSBuildThisFileDirectory)..\..\artifacts\wdk-packages\</CpPackages></PropertyGroup>
-  <Import Project="$(CpPackages)Microsoft.Windows.WDK.x64.$(CpKitVersion)\build\native\Microsoft.Windows.WDK.x64.props" Condition="'$(Platform)' == 'x64'" />
-  <Import Project="$(CpPackages)Microsoft.Windows.WDK.arm64.$(CpKitVersion)\build\native\Microsoft.Windows.WDK.arm64.props" Condition="'$(Platform)' == 'ARM64'" />
-  <Import Project="$(CpPackages)Microsoft.Windows.SDK.CPP.x64.$(CpKitVersion)\build\native\Microsoft.Windows.SDK.cpp.x64.props" Condition="'$(Platform)' == 'x64'" />
-  <Import Project="$(CpPackages)Microsoft.Windows.SDK.CPP.arm64.$(CpKitVersion)\build\native\Microsoft.Windows.SDK.cpp.arm64.props" Condition="'$(Platform)' == 'ARM64'" />
-  <Import Project="$(CpPackages)Microsoft.Windows.SDK.CPP.$(CpKitVersion)\build\native\Microsoft.Windows.SDK.cpp.props" />
-</Project>
