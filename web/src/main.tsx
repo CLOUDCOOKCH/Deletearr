@@ -3360,6 +3360,170 @@ function SettingsPage({ revision, refresh, navigate }: Props) {
     </>
   );
 }
+function PlexConnectForm({ refresh }: { refresh: () => void }) {
+  const [authUrl, setAuthUrl] = useState(""),
+    [waiting, setWaiting] = useState(false),
+    [busy, setBusy] = useState(false),
+    [servers, setServers] = useState<Row[] | null>(null),
+    [serverId, setServerId] = useState(""),
+    [uri, setUri] = useState(""),
+    [error, setError] = useState("");
+  useEffect(() => {
+    if (!waiting) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const result = await api("/auth/plex/poll", "POST", {});
+        if (cancelled) return;
+        if (result.pending) {
+          timer = setTimeout(poll, 2500);
+          return;
+        }
+        setWaiting(false);
+        setServers(result.servers);
+        setServerId(result.servers[0]?.id || "");
+        setUri(result.servers[0]?.connections[0] || "");
+      } catch (e) {
+        if (!cancelled) {
+          setError((e as Error).message);
+          setWaiting(false);
+        }
+      }
+    };
+    timer = setTimeout(poll, 1500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [waiting]);
+  return (
+    <section aria-label="Connect with Plex">
+      <h3>Connect with Plex</h3>
+      <p className="muted">
+        Sign in on Plex’s website, then select your owned server. Your token
+        stays on the backend.
+      </p>
+      <Button
+        kind="primary"
+        disabled={busy || waiting}
+        onClick={async () => {
+          const popup = window.open("about:blank", "deletarr-plex-connect");
+          if (popup) popup.opener = null;
+          setBusy(true);
+          setError("");
+          setServers(null);
+          try {
+            const result = await api(
+              "/auth/plex/start?connect=true",
+              "POST",
+              {},
+            );
+            setAuthUrl(result.url);
+            if (popup) popup.location.href = result.url;
+            setWaiting(true);
+          } catch (e) {
+            popup?.close();
+            setError((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {waiting ? "Waiting for Plex sign-in…" : "Sign in with Plex"}
+      </Button>
+      {waiting && (
+        <p role="status">
+          Finish signing in in the Plex tab.{" "}
+          <a href={authUrl} target="_blank" rel="noopener noreferrer">
+            Open Plex sign-in
+          </a>
+        </p>
+      )}
+      {servers && servers.length === 0 && (
+        <p role="status">
+          No owned Plex servers were found. Sign in with the server owner’s Plex
+          account.
+        </p>
+      )}
+      {servers && servers.length > 0 && (
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            setError("");
+            const form = new FormData(e.currentTarget);
+            try {
+              await api("/integrations/plex/connect", "POST", {
+                server_id: serverId,
+                uri,
+                allow_private: form.get("private") === "on",
+                enable_login: form.get("login") === "on",
+              });
+              setServers(null);
+              setAuthUrl("");
+              refresh();
+              notify("Plex connected");
+            } catch (e) {
+              setError((e as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <Field label="Your Plex server">
+            <select
+              value={serverId}
+              onChange={(e) => {
+                setServerId(e.target.value);
+                setUri(
+                  servers.find((s) => s.id === e.target.value)
+                    ?.connections[0] || "",
+                );
+              }}
+            >
+              {servers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            label="Server connection"
+            help="Choose an address reachable from this container. Use a valid Plex HTTPS hostname or local HTTP."
+          >
+            <select
+              value={uri}
+              onChange={(e) => setUri(e.target.value)}
+              required
+            >
+              {(servers.find((s) => s.id === serverId)?.connections || []).map(
+                (u: string) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ),
+              )}
+            </select>
+          </Field>
+          <label className="checkbox">
+            <input name="private" type="checkbox" />
+            Explicitly trust this private/LAN integration destination
+          </label>
+          <label className="checkbox">
+            <input name="login" type="checkbox" defaultChecked />
+            Use this Plex account to sign in to Deletarr
+          </label>
+          <Button kind="primary" type="submit" disabled={busy || !uri}>
+            {busy ? "Checking server…" : "Connect selected server"}
+          </Button>
+        </form>
+      )}
+      <ErrorBox text={error} />
+    </section>
+  );
+}
 function IntegrationForm({
   kind,
   existing,
@@ -3386,6 +3550,12 @@ function IntegrationForm({
             )[kind] +
             "."}
       </p>
+      {kind === "plex" && !existing?.environment_managed && (
+        <>
+          <PlexConnectForm refresh={refresh} />
+          <h3>Manual connection</h3>
+        </>
+      )}
       <form
         key={existing?.url}
         onSubmit={async (e) => {

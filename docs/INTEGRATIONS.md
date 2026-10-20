@@ -15,6 +15,16 @@ Upstream development specifications can change. Contract tests preserve the meth
 
 ## Plex
 
+Settings → Plex supports the Plex PIN sign-in flow for server connection.
+An authenticated local administrator authorizes Plex in a separate tab, then
+selects an owned server and one of its advertised connections. The backend
+verifies account identity, ownership, server identity and library access before
+saving an encrypted server token. Temporary encrypted connection grants expire
+after ten minutes and are single-use. No tokens are returned to the browser.
+LAN trust remains explicit. Login enrollment is a separate visible checkbox;
+only that verified identity may subsequently sign in. Local login remains
+available. Environment-managed connections cannot be replaced through this flow.
+
 Uses token headers and JSON responses. `/identity` establishes server identity, `/library/sections` discovers libraries, and paginated section enumeration retrieves media with GUIDs, parts, labels and collections. TV sync visits show/season/episode types in hierarchy order. Renames update metadata; a disappearance marks an item missing and protects it rather than deleting local content.
 
 `/status/sessions/history/all` is paginated and merged into local events. `/api/v2/resources` on plex.tv must confirm ownership of this machine identifier before current multi-user visibility is accepted. Access to owner history does not certify lifetime completeness. No missing record proves never-watched. Watched evidence is any observed Plex user's completed/marked-watched event; latest observed event across users drives last-watch retention. Changes do not erase locally retained history. A first-watch timer uses earliest observed completion, which can be later than the actual historical first watch.

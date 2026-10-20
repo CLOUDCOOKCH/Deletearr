@@ -175,6 +175,16 @@
               "default": false,
               "title": "Enroll"
             }
+          },
+          {
+            "name": "connect",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Connect"
+            }
           }
         ],
         "responses": {
@@ -209,6 +219,42 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/plex/connect": {
+      "post": {
+        "summary": "Plex Connect",
+        "operationId": "plex_connect_api_integrations_plex_connect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlexConnect"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -2442,6 +2488,37 @@
           "new_password"
         ],
         "title": "PasswordChange"
+      },
+      "PlexConnect": {
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Server Id"
+          },
+          "uri": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Uri"
+          },
+          "allow_private": {
+            "type": "boolean",
+            "title": "Allow Private",
+            "default": false
+          },
+          "enable_login": {
+            "type": "boolean",
+            "title": "Enable Login",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "server_id",
+          "uri"
+        ],
+        "title": "PlexConnect"
       },
       "PressureInput": {
         "properties": {

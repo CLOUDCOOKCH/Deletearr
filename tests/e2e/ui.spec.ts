@@ -2,6 +2,80 @@ import { test, expect } from "@playwright/test";
 import { readFileSync, mkdirSync } from "node:fs";
 const origin = process.env.DELETARR_TEST_URL || "http://127.0.0.1:8980";
 const password = "UI-test-only-password-1234";
+
+test("Plex connection sign-in, server selection and responsive settings", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await signIn(page);
+  await page.route("**/api/auth/plex/start?connect=true", (route) =>
+    route.fulfill({ json: { url: "about:blank" } }),
+  );
+  await page.route("**/api/auth/plex/poll", (route) =>
+    route.fulfill({
+      json: {
+        pending: false,
+        servers: [
+          {
+            id: "browser-contract-server",
+            name: "Test NAS",
+            connections: ["http://192.168.1.235:32400"],
+          },
+        ],
+      },
+    }),
+  );
+  let submitted: any;
+  await page.route("**/api/integrations/plex/connect", async (route) => {
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("button", { name: "Settings", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Plex", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Sign in with Plex", exact: true })
+    .click();
+  await expect(page.getByLabel("Your Plex server")).toHaveValue(
+    "browser-contract-server",
+  );
+  await page
+    .getByLabel("Explicitly trust this private/LAN integration destination")
+    .first()
+    .check();
+  await expect(
+    page.getByLabel("Use this Plex account to sign in to Deletarr"),
+  ).toBeChecked();
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.screenshot({
+    path: "test-results/plex-connect-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page.getByRole("button", { name: "Connect selected server" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: "test-results/plex-connect-mobile.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Connect selected server" }).click();
+  await expect(page.getByText("Plex connected", { exact: true })).toBeVisible();
+  expect(submitted).toEqual({
+    server_id: "browser-contract-server",
+    uri: "http://192.168.1.235:32400",
+    allow_private: true,
+    enable_login: true,
+  });
+});
+
 async function signIn(page: any) {
   await page.goto("/");
   await expect(page.getByLabel("Username", { exact: true })).toBeVisible();

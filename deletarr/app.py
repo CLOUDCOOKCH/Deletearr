@@ -22,7 +22,7 @@ from .catalog import Catalog
 from .db import Database, encode, now, uid
 from .executor import Executor
 from .filesystem import Filesystem
-from .integrations import HTTP, Integrations
+from .integrations import HTTP, Integrations, Plex
 from .jobs import KINDS, Notifications, Worker
 from .rules import Engine, RuleInput
 from .security import PASSWORDS, SafetyError, Vault, authenticate, new_session, token_hash, validate_url
@@ -51,6 +51,13 @@ class Connection(Strict):
     secret: str = Field(default="", max_length=4096)
     allow_private: bool = False
     timeout: int = Field(default=15, ge=2, le=60)
+
+
+class PlexConnect(Strict):
+    server_id: str = Field(max_length=256)
+    uri: str = Field(max_length=2048)
+    allow_private: bool = False
+    enable_login: bool = True
 
 
 class RootInput(Strict):
@@ -329,8 +336,8 @@ def create_app(directory=None, run_worker=True):
         return {"ok": True}
 
     @app.post("/api/auth/plex/start")
-    async def plex_start(request: Request, response: Response, enroll: bool = False):
-        if enroll:
+    async def plex_start(request: Request, response: Response, enroll: bool = False, connect: bool = False):
+        if enroll or connect:
             row = session(request)
             if request.headers.get("x-csrf-token") != row["csrf"]:
                 raise HTTPException(403, "CSRF token invalid")
@@ -346,7 +353,7 @@ def create_app(directory=None, run_worker=True):
         token = secrets.token_urlsafe(32)
         db.execute(
             "INSERT INTO auth_pins VALUES(?,?,?,?,?)",
-            (token_hash(token), data["id"], vault.encrypt(client_id), now() + 600, int(enroll)),
+            (token_hash(token), data["id"], vault.encrypt(client_id), now() + 600, 2 if connect else int(enroll)),
         )
         response.set_cookie(
             "deletarr_plex", token, httponly=True, secure=request.url.scheme == "https", samesite="strict", max_age=600
@@ -363,6 +370,26 @@ def create_app(directory=None, run_worker=True):
         )
         if not pin:
             raise SafetyError("Plex authentication expired")
+        if pin["enrolling"]:
+            row = session(request)
+            if request.headers.get("x-csrf-token") != row["csrf"]:
+                raise HTTPException(403, "CSRF token invalid")
+
+        def choices(grant):
+            return {
+                "pending": False,
+                "servers": [
+                    {
+                        "id": r["clientIdentifier"],
+                        "name": r.get("name", "Plex server"),
+                        "connections": [c["uri"] for c in r.get("connections", []) if c.get("uri")],
+                    }
+                    for r in grant["resources"]
+                ],
+            }
+
+        if pin["enrolling"] == 3:
+            return choices(json.loads(vault.decrypt(pin["secret"])))
         headers = {
             "Accept": "application/json",
             "X-Plex-Product": "Deletarr",
@@ -376,6 +403,25 @@ def create_app(directory=None, run_worker=True):
         )
         if not identity or not identity.get("id"):
             raise SafetyError("Plex account identity could not be verified")
+        if pin["enrolling"] == 2:
+            resources = await HTTP(
+                "https://plex.tv", {**headers, "X-Plex-Token": data["authToken"]}, service="Plex account"
+            ).request("GET", "/api/v2/resources", params={"includeHttps": 1})
+            if not isinstance(resources, list):
+                raise SafetyError("Plex server discovery unavailable")
+            owned = [
+                r
+                for r in resources
+                if r.get("owned") is True
+                and "server" in str(r.get("provides", "")).split(",")
+                and r.get("clientIdentifier")
+                and r.get("accessToken")
+            ]
+            grant = {"identity": str(identity["id"]), "resources": owned}
+            db.execute(
+                "UPDATE auth_pins SET secret=?,enrolling=3 WHERE id=?", (vault.encrypt(encode(grant)), pin["id"])
+            )
+            return choices(grant)
         if pin["enrolling"]:
             row = session(request)
             if request.headers.get("x-csrf-token") != row["csrf"]:
@@ -389,6 +435,58 @@ def create_app(directory=None, run_worker=True):
         token, csrf = new_session(db)
         cookie(response, request, token)
         return {"csrf": csrf, "pending": False}
+
+    @app.post("/api/integrations/plex/connect")
+    async def plex_connect(data: PlexConnect, request: Request, response: Response):
+        if os.getenv("DELETARR_PLEX_URL"):
+            raise SafetyError("This integration is managed by environment variables")
+        pin = db.one(
+            "SELECT * FROM auth_pins WHERE id=? AND enrolling=3 AND expires>?",
+            (token_hash(request.cookies.get("deletarr_plex", "")), now()),
+        )
+        if not pin:
+            raise SafetyError("Plex connection expired; sign in with Plex again")
+        grant = json.loads(vault.decrypt(pin["secret"]))
+        resource = next((r for r in grant["resources"] if r["clientIdentifier"] == data.server_id), None)
+        if not resource or data.uri not in [c.get("uri") for c in resource.get("connections", [])]:
+            raise SafetyError("Select a connection advertised by your owned Plex server")
+        url = validate_url(data.uri, data.allow_private)
+        headers = {
+            "Accept": "application/json",
+            "X-Plex-Token": resource["accessToken"],
+            "X-Plex-Client-Identifier": integrations.plex_client_id,
+            "X-Plex-Product": "Deletarr",
+        }
+        adapter = Plex(HTTP(url, headers, data.allow_private, service="Plex"))
+        identity = await adapter.identity()
+        if identity["machineIdentifier"] != data.server_id:
+            raise SafetyError("Plex connection identifies a different server")
+        await adapter.libraries()
+        previous = db.one("SELECT server_id FROM integrations WHERE kind='plex'")
+        if previous and previous["server_id"] and previous["server_id"] != data.server_id:
+            raise SafetyError(
+                "A different Plex server is already indexed; keep its connection or reset the catalog first"
+            )
+        with db.transaction() as c:
+            if (
+                c.execute("DELETE FROM auth_pins WHERE id=? AND enrolling=3 AND expires>?", (pin["id"], now())).rowcount
+                != 1
+            ):
+                raise SafetyError("Plex connection expired or was already used; sign in with Plex again")
+            c.execute(
+                """INSERT INTO integrations(kind,url,secret,allow_private,timeout,health,checked_at,server_id)
+                VALUES('plex',?,?,?,15,'connected',?,?) ON CONFLICT(kind) DO UPDATE SET
+                url=excluded.url,secret=excluded.secret,allow_private=excluded.allow_private,
+                health=excluded.health,checked_at=excluded.checked_at,server_id=excluded.server_id""",
+                (url, vault.encrypt(resource["accessToken"]), int(data.allow_private), now(), data.server_id),
+            )
+            if data.enable_login:
+                c.execute("UPDATE administrator SET plex_identity=? WHERE id=1", (grant["identity"],))
+            c.execute("UPDATE plans SET expires=0")
+            c.execute("UPDATE libraries SET synced_at=NULL")
+        response.delete_cookie("deletarr_plex")
+        db.audit("integration.plex.connected", detail={"server_id": data.server_id, "login_enabled": data.enable_login})
+        return {"ok": True}
 
     @app.get("/api/dashboard")
     def dashboard():

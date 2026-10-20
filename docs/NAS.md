@@ -25,7 +25,14 @@ constitute verification on NAS hardware.
    NAS folders, and redeploy without deleting the configuration volume.
    The application runs as UID/GID 10001; use the NAS file-permissions UI
    to grant it access. Never run as root to bypass permissions.
-5. Connect Plex using the NAS LAN IP, explicitly trust its LAN destination,
+5. In Settings → Plex, choose **Sign in with Plex**. Authenticate on Plex's
+   website; Deletarr will offer your owned servers. Choose a reachable
+   connection, explicitly trust the LAN destination if applicable, and choose
+   **Connect selected server**. Leave **Use this Plex account to sign in to
+   Deletarr** checked to enable future Plex login. Your token stays on the
+   backend. Local login remains available independently of Plex. Manual URL
+   and token configuration is also available.
+   Then
    select a test library, authorize the container media roots, and configure
    integration-to-container path mappings. Sync and simulate a rule.
 
