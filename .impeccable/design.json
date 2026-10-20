@@ -1,1 +1,176 @@
-{"version":1,"mode":"operate","tokens":{"background":"#141814","surface":"#1b201c","raised":"#242a24","border":"#30372f","text":"#e9eee7","muted":"#a2ada0","accent":"#b0ed83","destructive":"#ffaaa5","font":"Manrope Variable","radius":10},"breakpoints":[640,900,1200],"source":"web/src/style.css"}
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-20T10:57:42.416891+00:00",
+  "title": "Design System: Deletarr",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Pale green (administrator configurable)"
+      },
+      "background": {
+        "role": "neutral",
+        "displayName": "Neutral charcoal"
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Working surface"
+      },
+      "destructive": {
+        "role": "semantic",
+        "displayName": "Independent destructive red"
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Page heading",
+        "purpose": "32px desktop, 28px at 640px and below."
+      },
+      "body": {
+        "displayName": "Operational body",
+        "purpose": "Locally hosted Manrope; dense component copy uses 12\u201313px."
+      }
+    },
+    "shadows": [
+      {
+        "name": "dialog",
+        "value": "0 25px 100px #0008",
+        "purpose": "Native modal separation."
+      },
+      {
+        "name": "compact-drawer",
+        "value": "10px 0 50px #0006",
+        "purpose": "Open compact navigation."
+      }
+    ],
+    "motion": [
+      {
+        "name": "button-background",
+        "value": "background 0.15s ease-out",
+        "purpose": "Action state feedback."
+      },
+      {
+        "name": "drawer",
+        "value": "transform 0.2s ease-out",
+        "purpose": "Compact navigation transition."
+      },
+      {
+        "name": "poster-hover",
+        "value": "transform 0.2s ease-out",
+        "purpose": "Subtle 1.025 image scale; disabled for reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "640px"
+      },
+      {
+        "name": "narrow-shell",
+        "value": "900px"
+      },
+      {
+        "name": "stacked-dashboard",
+        "value": "1000px"
+      },
+      {
+        "name": "reduced-padding",
+        "value": "1200px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "description": "Operational action with visible hover and keyboard focus.",
+      "html": "<button class=\"ds-button-primary\">Review cleanup queue</button>",
+      "css": ".ds-button-primary { font-family: \"Manrope Variable\", sans-serif; font-size: 12px; line-height: 1.5; font-weight: 650; min-height: 39px; padding: 9px 13px; border: 1px solid var(--accent, #b0ed83); border-radius: 8px; background: var(--accent, #b0ed83); color: var(--accent-text, #162016); cursor: pointer; transition: background 0.15s ease-out; } .ds-button-primary:hover { filter: brightness(0.95); } .ds-button-primary:focus-visible { outline: 2px solid var(--accent, #b0ed83); outline-offset: 3px; }",
+      "refersTo": "button-primary"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "description": "Operational action with visible hover and keyboard focus.",
+      "html": "<button class=\"ds-button-secondary\">Review cleanup queue</button>",
+      "css": ".ds-button-secondary { font-family: \"Manrope Variable\", sans-serif; font-size: 12px; line-height: 1.5; font-weight: 650; min-height: 39px; padding: 9px 13px; border: 1px solid var(--line, #30343a); border-radius: 8px; background: var(--surface, #191b1e); color: var(--text, #f0f1f3); cursor: pointer; transition: background 0.15s ease-out; } .ds-button-secondary:hover { background: var(--raised, #24272b); color: var(--text, #f0f1f3); } .ds-button-secondary:focus-visible { outline: 2px solid var(--accent, #b0ed83); outline-offset: 3px; }"
+    },
+    {
+      "name": "Quiet button",
+      "kind": "button",
+      "description": "Operational action with visible hover and keyboard focus.",
+      "html": "<button class=\"ds-button-quiet\">Review cleanup queue</button>",
+      "css": ".ds-button-quiet { font-family: \"Manrope Variable\", sans-serif; font-size: 12px; line-height: 1.5; font-weight: 650; min-height: 39px; padding: 9px 13px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted, #a6abb4); cursor: pointer; transition: background 0.15s ease-out; } .ds-button-quiet:hover { background: var(--raised, #24272b); color: var(--text, #f0f1f3); } .ds-button-quiet:focus-visible { outline: 2px solid var(--accent, #b0ed83); outline-offset: 3px; }"
+    },
+    {
+      "name": "Text field",
+      "kind": "input",
+      "description": "Explicit label above a surface-toned field.",
+      "html": "<label class=\"ds-field\">Library name<input placeholder=\"Choose a library\" /></label>",
+      "css": ".ds-field { display: grid; gap: 8px; font: 13px \"Manrope Variable\", sans-serif; color: var(--text, #f0f1f3); } .ds-field input { font: inherit; min-height: 40px; padding: 10px 12px; border: 1px solid var(--line, #30343a); border-radius: 8px; background: var(--surface, #191b1e); color: inherit; } .ds-field input::placeholder { color: var(--muted, #a6abb4); } .ds-field input:focus-visible { outline: 2px solid var(--accent, #b0ed83); outline-offset: 3px; }",
+      "refersTo": "input"
+    },
+    {
+      "name": "Active navigation item",
+      "kind": "nav",
+      "description": "Neutral selected surface with an accent icon and current-page semantics.",
+      "html": "<nav aria-label=\"Main navigation\"><button class=\"ds-nav\" aria-current=\"page\"><svg width=\"19\" height=\"19\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\" rx=\"1\"/></svg>Dashboard</button></nav>",
+      "css": ".ds-nav { display: flex; align-items: center; gap: 11px; min-height: 44px; padding: 10px 12px; font: 550 12px \"Manrope Variable\", sans-serif; border: 0; border-radius: 8px; background: var(--raised, #24272b); color: var(--text, #f0f1f3); cursor: pointer; } .ds-nav svg { color: var(--accent, #b0ed83); } .ds-nav:hover { filter: brightness(1.08); } .ds-nav:focus-visible { outline: 2px solid var(--accent, #b0ed83); outline-offset: 3px; }"
+    },
+    {
+      "name": "Dry-run badge",
+      "kind": "chip",
+      "description": "Textual status with restrained accent tint.",
+      "html": "<span class=\"ds-badge\">Dry-run</span>",
+      "css": ".ds-badge { display: inline-flex; padding: 3px 8px; border-radius: 5px; font: 11px/1.5 \"Manrope Variable\", sans-serif; color: var(--text, #f0f1f3); background: color-mix(in srgb, var(--accent, #b0ed83) 12%, var(--surface, #191b1e)); }"
+    },
+    {
+      "name": "Cleanup panel",
+      "kind": "card",
+      "description": "Bordered working surface with a modest section heading.",
+      "html": "<section class=\"ds-panel\"><h2>Your next cleanup</h2><p>Review eligible titles and their exact plans.</p></section>",
+      "css": ".ds-panel { padding: 25px 27px; background: var(--surface, #191b1e); border: 1px solid var(--line, #30343a); border-radius: 14px; color: var(--text, #f0f1f3); font-family: \"Manrope Variable\", sans-serif; } .ds-panel h2 { font-size: 15px; font-weight: 650; margin: 0 0 20px; } .ds-panel p { color: var(--muted, #a6abb4); font-size: 13px; line-height: 1.7; }",
+      "refersTo": "panel"
+    },
+    {
+      "name": "Secondary queue actions",
+      "kind": "custom",
+      "description": "Native disclosure keeps less frequent candidate actions available.",
+      "html": "<details class=\"ds-more\"><summary>More actions</summary><div><button>Postpone 7 days</button><button>Keep Forever</button><button class=\"ds-reject\">Reject</button></div></details>",
+      "css": ".ds-more { color: var(--muted, #a6abb4); font: 11px \"Manrope Variable\", sans-serif; } .ds-more summary { cursor: pointer; padding: 10px; border-radius: 7px; } .ds-more summary:hover { background: var(--raised, #24272b); color: var(--text, #f0f1f3); } .ds-more summary:focus-visible { outline: 2px solid var(--accent, #b0ed83); outline-offset: 3px; } .ds-more > div { display: flex; flex-direction: column; gap: 3px; border-top: 1px solid var(--line, #30343a); padding-top: 7px; margin-top: 4px; } .ds-more button { background: transparent; border: 0; border-radius: 8px; color: inherit; padding: 9px; text-align: left; font: inherit; cursor: pointer; } .ds-more button:hover { background: var(--raised, #24272b); } .ds-more button:focus-visible { outline: 2px solid var(--accent, #b0ed83); outline-offset: 3px; } .ds-more .ds-reject { color: var(--red, #ffaaa5); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The cinematic control room",
+    "overview": "Neutral charcoal surfaces frame the real media library. Cleanup review and storage context lead, with restrained accent, tonal depth, and a sticky translucent header. Product truth and safety behavior remain owned by the existing application.",
+    "keyCharacteristics": [
+      "Compact operational typography",
+      "Cleanup and storage hierarchy",
+      "Tonal surfaces with thin borders",
+      "Grouped settings and native disclosures",
+      "Responsive navigation with persistent mode context"
+    ],
+    "rules": [
+      {
+        "name": "Independent destructive meaning",
+        "body": "Keep destructive colors and explicit labels independent of the selected accent.",
+        "section": "colors"
+      },
+      {
+        "name": "Tonal depth",
+        "body": "Use tonal surfaces and borders for ordinary panels; reserve shadows for dialogs and compact navigation.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do retain all three anime presets and administrator accent choices.",
+      "Do preserve focus, labelled controls, native disclosures, reduced motion, and exact-plan review.",
+      "Do distinguish logical estimates from actual reclaimed storage."
+    ],
+    "donts": [
+      "Don't invent metrics, media, or guaranteed storage savings.",
+      "Don't weaken dry-run/live visibility or protected confirmation flows.",
+      "Don't generalize the task-specific Taste annotation into a global preference."
+    ]
+  }
+}

@@ -186,6 +186,24 @@ test("cleanup queue displays posters, watch dates and missing-history states", a
     path: "test-results/queue-mobile.png",
     fullPage: true,
   });
+  // Secondary decisions stay available in the compact action disclosure.
+  const decisions: string[] = [];
+  await page.route("**/api/candidates/movie/action", (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.version).toBe(1);
+    expect(body.days).toBe(7);
+    decisions.push(body.action);
+    return route.fulfill({ json: { ok: true } });
+  });
+  const movie = page.locator(".candidate").first();
+  await movie.getByRole("button", { name: "Approve", exact: true }).click();
+  await movie.getByText("More actions", { exact: true }).click();
+  for (const name of ["Postpone 7 days", "Keep Forever", "Reject"]) {
+    await movie.getByRole("button", { name, exact: true }).click();
+  }
+  await expect
+    .poll(() => decisions)
+    .toEqual(["approve", "postpone", "keep", "reject"]);
 });
 
 test("live-mode checkbox replaces typed phrase and errors remain visible", async ({
@@ -331,7 +349,7 @@ async function signIn(page: any) {
     })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Room for what’s next.", exact: true }),
+    page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
 }
 test("real application: onboarding, CRUD, safe defaults, desktop and mobile", async ({
@@ -340,6 +358,11 @@ test("real application: onboarding, CRUD, safe defaults, desktop and mobile", as
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await signIn(page);
+  const currentRoute = page.url();
+  await page.getByRole("link", { name: "Skip to content" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(currentRoute);
+  await expect(page.locator("main")).toBeFocused();
   const state = await page.request.get("/api/auth/status");
   const csrf = (await state.json()).csrf;
   const settingsResponse = await page.request.get("/api/settings");
@@ -363,6 +386,17 @@ test("real application: onboarding, CRUD, safe defaults, desktop and mobile", as
     fullPage: true,
     animations: "disabled",
   });
+  await page.evaluate(() => (document.documentElement.dataset.theme = "light"));
+  await expect(page.locator("html")).toHaveCSS(
+    "background-color",
+    "rgb(244, 245, 247)",
+  );
+  await page.screenshot({
+    path: "docs/screenshots/dashboard-light.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.evaluate(() => (document.documentElement.dataset.theme = "dark"));
   await page
     .getByRole("navigation", { name: "Main navigation" })
     .getByRole("button", { name: "Rules", exact: true })

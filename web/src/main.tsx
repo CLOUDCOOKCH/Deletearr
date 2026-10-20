@@ -49,6 +49,7 @@ import { PressureSettings } from "./PressureSettings";
 import { MappingSuggestions } from "./MappingSuggestions";
 import { AppearanceSettings, animeThemes } from "./AppearanceSettings";
 import "./themes.css";
+import "./workspace.css";
 
 type Row = Record<string, any>;
 type Condition = {
@@ -445,6 +446,16 @@ function App() {
     window.addEventListener("hashchange", listener);
     return () => window.removeEventListener("hashchange", listener);
   }, []);
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobile(false);
+        document.querySelector<HTMLButtonElement>(".mobile-menu")?.focus();
+      }
+    };
+    if (mobile) window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [mobile]);
   const navigate = (next: string) => {
     location.hash = next;
     setPage(next);
@@ -471,6 +482,25 @@ function App() {
   const props = { revision, refresh, navigate, open: setDetail };
   return (
     <div className="app">
+      <a
+        className="skip-link"
+        href="#main-content"
+        onClick={(event) => {
+          event.preventDefault();
+          const content = document.getElementById("main-content");
+          content?.focus();
+          content?.scrollIntoView({ block: "start" });
+        }}
+      >
+        Skip to content
+      </a>
+      {mobile && smallScreen && (
+        <button
+          className="menu-backdrop"
+          aria-label="Close menu"
+          onClick={() => setMobile(false)}
+        />
+      )}
       <aside
         className={mobile ? "sidebar open" : "sidebar"}
         inert={smallScreen && !mobile}
@@ -486,7 +516,7 @@ function App() {
             <HardDrive size={19} />
           </span>
           <div>
-            Your media server<small>Personal workspace</small>
+            Media workspace<small>Self-hosted · Private</small>
           </div>
         </div>
         <nav aria-label="Main navigation">
@@ -494,11 +524,14 @@ function App() {
             <button
               key={name}
               className={page === name ? "active" : ""}
+              aria-current={page === name ? "page" : undefined}
               onClick={() => navigate(name)}
             >
               <Icon size={19} />
               <span>{name}</span>
-              {name === "Cleanup Queue" && <span className="nav-dot" />}
+              {name === "Cleanup Queue" && (
+                <ChevronRight className="nav-arrow" size={14} />
+              )}
             </button>
           ))}
         </nav>
@@ -537,7 +570,7 @@ function App() {
               <Menu />
             </button>
             <span className="breadcrumb">
-              Workspace <ChevronRight size={14} />
+              Deletarr <ChevronRight size={14} />
               <b>{page}</b>
             </span>
           </div>
@@ -561,14 +594,14 @@ function App() {
             </button>
             <button
               className="icon-button"
-              aria-label="System diagnostics"
+              aria-label="Open settings"
               onClick={() => navigate("Settings")}
             >
               <CircleHelp size={18} />
             </button>
           </div>
         </header>
-        <main className="content">
+        <main className="content" id="main-content" tabIndex={-1}>
           {page === "Dashboard" ? (
             <Dashboard {...props} />
           ) : page === "Libraries" ? (
@@ -662,72 +695,111 @@ function Dashboard({ revision, refresh, navigate, open }: Props) {
   );
   if (error) return <ErrorBox text={error} />;
   if (!d) return <Loading />;
+  const live = d.settings.dry_run === false;
   return (
     <>
       <PageHeading
-        title="Room for what’s next."
-        description="A clear view of your library. A thoughtful plan for its future."
+        title="Overview"
+        description="A little space. A better library."
       >
         <Button onClick={() => runJob("full_sync").then(refresh)}>
-          <RefreshCw size={16} />
-          Sync libraries
+          <RefreshCw size={16} /> Sync libraries
         </Button>
         <Button kind="primary" onClick={() => runJob("evaluate").then(refresh)}>
-          <Play size={15} />
-          Evaluate rules
+          <Play size={15} /> Evaluate rules
         </Button>
       </PageHeading>
       {!d.settings.onboarding_complete && (
         <div className="onboard-banner">
-          <div className="banner-symbol">
-            <Sparkles size={25} />
-          </div>
+          <ShieldCheck size={24} />
           <div>
-            <h3>Your library’s next chapter starts here.</h3>
+            <h3>Let’s connect your library.</h3>
             <p>
-              Connect Plex, map your storage, and preview your first retention
-              rule.
+              Connect Plex, authorize storage, then preview your first rule.
             </p>
           </div>
           <Button onClick={() => navigate("Settings")}>
-            Finish setup
-            <ArrowRight size={16} />
+            Finish setup <ArrowRight size={16} />
           </Button>
         </div>
       )}
-      <div className="metrics">
-        <Metric
-          title="Your library"
-          value={(d.counts.movie || 0) + (d.counts.episode || 0)}
-          subtitle={`${d.counts.movie || 0} movies · ${d.counts.show || 0} shows · ${d.counts.episode || 0} episodes`}
-          icon={Film}
-        />
-        <Metric
-          title="Indexed media"
-          value={bytes(d.logical_bytes)}
-          subtitle={`${d.files} physical files · logical size`}
-          icon={HardDrive}
-        />
-        <Metric
-          title="Ready for review"
-          value={d.candidates}
-          subtitle={`${bytes(d.candidate_logical_bytes)} candidate files · logical estimate`}
-          icon={ListFilter}
-        />
-        <Metric
-          title="Kept forever"
-          value={d.protected}
-          subtitle="Explicitly protected media"
-          icon={ShieldCheck}
-        />
-      </div>
-      <div className="dashboard-columns">
+      <dl className="library-summary" aria-label="Library summary">
+        <div>
+          <dt>
+            <Film size={16} /> Movies
+          </dt>
+          <dd>{d.counts.movie || 0}</dd>
+        </div>
+        <div>
+          <dt>
+            <Tv size={16} /> Shows
+          </dt>
+          <dd>
+            {d.counts.show || 0}
+            <small>{d.counts.episode || 0} episodes</small>
+          </dd>
+        </div>
+        <div>
+          <dt>
+            <HardDrive size={16} /> Indexed storage
+          </dt>
+          <dd>
+            {bytes(d.logical_bytes)}
+            <small>Logical file size</small>
+          </dd>
+        </div>
+        <div>
+          <dt>
+            <ShieldCheck size={16} /> Keep Forever
+          </dt>
+          <dd>
+            {d.protected}
+            <small>Protected titles</small>
+          </dd>
+        </div>
+      </dl>
+      <div className="overview-grid">
+        <section className="review-focus">
+          <div className="review-focus-head">
+            <h2>Your next cleanup</h2>
+            <Badge tone={live ? "red" : "green"}>
+              {live ? "Live mode" : "Dry-run"}
+            </Badge>
+          </div>
+          <h3>
+            {d.candidates
+              ? `${d.candidates} ${d.candidates === 1 ? "candidate" : "candidates"} to review.`
+              : "Nothing to clear. Room to enjoy."}
+          </h3>
+          <p>
+            {d.candidates
+              ? "See what matched your rules, check the last watch, and decide what stays."
+              : "Sync your library and evaluate your rules. Eligible titles will appear here for review."}
+          </p>
+          <div className="review-estimate">
+            <HardDrive size={18} />
+            <span>
+              <b>{bytes(d.candidate_logical_bytes)}</b> candidate file size
+              <small>
+                Logical estimate · actual reclaimed space may differ
+              </small>
+            </span>
+          </div>
+          <Button kind="primary" onClick={() => navigate("Cleanup Queue")}>
+            Review cleanup queue <ArrowRight size={16} />
+          </Button>
+          <div className="review-safety">
+            <ShieldCheck size={15} />
+            {live
+              ? "Live deletion enabled. Review every plan carefully."
+              : "Dry-run is on. Your media stays in place."}
+          </div>
+        </section>
         <section className="panel storage-panel">
           <div className="section-heading">
             <h2>Storage overview</h2>
             <Button kind="quiet" onClick={() => navigate("Settings")}>
-              Manage storage
-              <ArrowRight size={14} />
+              Manage <ArrowRight size={14} />
             </Button>
           </div>
           {d.volumes.length ? (
@@ -735,7 +807,7 @@ function Dashboard({ revision, refresh, navigate, open }: Props) {
               <div className="volume" key={v.id}>
                 <div className="volume-head">
                   <span>
-                    <HardDrive size={19} />
+                    <HardDrive size={18} />
                     {v.path}
                   </span>
                   <Badge tone={v.healthy ? "green" : "red"}>
@@ -746,12 +818,21 @@ function Dashboard({ revision, refresh, navigate, open }: Props) {
                   <>
                     <div className="capacity">
                       <b>
-                        {bytes(v.total - v.free)}
-                        <small> used</small>
+                        {bytes(v.available)}
+                        <small> available</small>
                       </b>
                       <span>{bytes(v.total)} total</span>
                     </div>
-                    <div className="storage-bar">
+                    <div
+                      className="storage-bar"
+                      role="meter"
+                      aria-label={`${v.path} storage used`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(
+                        ((v.total - v.free) / v.total) * 100,
+                      )}
+                    >
                       <div
                         style={{
                           width: `${((v.total - v.free) / v.total) * 100}%`,
@@ -759,12 +840,9 @@ function Dashboard({ revision, refresh, navigate, open }: Props) {
                       />
                     </div>
                     <div className="volume-legend">
+                      <span>{bytes(v.total - v.free)} used</span>
                       <span>
-                        <i />
-                        {bytes(v.available)} available
-                      </span>
-                      <span>
-                        {((v.available / v.total) * 100).toFixed(1)}% free
+                        {((v.available / v.total) * 100).toFixed(1)}% available
                       </span>
                     </div>
                   </>
@@ -774,141 +852,119 @@ function Dashboard({ revision, refresh, navigate, open }: Props) {
               </div>
             ))
           ) : (
-            <Empty icon={HardDrive} title="Give your media a home">
-              Authorize a mounted media root to see real capacity and validate
-              file access.
+            <Empty icon={HardDrive} title="Connect your storage">
+              Authorize a mounted media root in Settings to see its capacity and
+              verify access.
             </Empty>
           )}
           <div className="footnote">
-            <ShieldCheck size={15} />
-            Logical file sizes and physical storage savings can differ with
-            hardlinks.
-          </div>
-        </section>
-        <section className="panel">
-          <div className="section-heading">
-            <h2>Connected services</h2>
-            <button
-              className="icon-button"
-              aria-label="Configure integrations"
-              onClick={() => navigate("Settings")}
-            >
-              <MoreHorizontal size={20} />
-            </button>
-          </div>
-          <div className="services">
-            {["plex", "radarr", "sonarr", "seerr"].map((name, i) => {
-              const service = d.integrations.find((x: Row) => x.kind === name);
-              return (
-                <div className="service" key={name}>
-                  <span className={"service-icon service-" + name}>
-                    {[<Play />, <Film />, <Tv />, <Search />][i]}
-                  </span>
-                  <div>
-                    <strong>{name[0].toUpperCase() + name.slice(1)}</strong>
-                    <small>
-                      {
-                        [
-                          "Media server & playback",
-                          "Movie management",
-                          "Television management",
-                          "Requests & availability",
-                        ][i]
-                      }
-                    </small>
-                  </div>
-                  <span
-                    className={
-                      "service-state " +
-                      (service?.health === "connected" ? "connected" : "")
-                    }
-                  >
-                    {service?.health === "connected" ? (
-                      <Check size={15} />
-                    ) : (
-                      <span className="status-dot" />
-                    )}
-                    {service?.health === "connected"
-                      ? "Connected"
-                      : service
-                        ? "Not verified"
-                        : "Not configured"}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <Button kind="wide quiet" onClick={() => navigate("Settings")}>
-            Configure integrations
-            <ArrowRight size={15} />
-          </Button>
-          <div className="footnote">
-            <Play size={14} />
-            Active Plex streams:{" "}
-            {Array.isArray(streams.data) ? streams.data.length : "Unavailable"}
-            {streams.error ? " · connection could not be verified" : ""}
+            <HardDrive size={14} />
+            Volumes can contain multiple media roots. Hardlinks affect actual
+            savings.
           </div>
         </section>
       </div>
+      <section className="connection-strip" aria-label="Integration status">
+        {["plex", "radarr", "sonarr", "seerr"].map((name, i) => {
+          const service = d.integrations.find((x: Row) => x.kind === name);
+          const connected = service?.health === "connected";
+          return (
+            <button
+              className="connection"
+              key={name}
+              onClick={() => navigate("Settings")}
+            >
+              <span className={"service-icon service-" + name}>
+                {
+                  [
+                    <Play key="plex" />,
+                    <Film key="radarr" />,
+                    <Tv key="sonarr" />,
+                    <Search key="seerr" />,
+                  ][i]
+                }
+              </span>
+              <span>
+                <strong>{name[0].toUpperCase() + name.slice(1)}</strong>
+                <small>
+                  {connected
+                    ? "Connected"
+                    : service
+                      ? "Not verified"
+                      : "Not configured"}
+                </small>
+              </span>
+              <span
+                className={
+                  "connection-indicator" + (connected ? " connected" : "")
+                }
+                aria-hidden="true"
+              />
+            </button>
+          );
+        })}
+      </section>
       <div className="dashboard-columns">
-        <section className="panel">
+        <section className="panel recently-watched">
           <div className="section-heading">
             <h2>Recently watched</h2>
             <Button kind="quiet" onClick={() => navigate("Libraries")}>
-              View library
-              <ArrowRight size={14} />
+              View library <ArrowRight size={14} />
             </Button>
           </div>
           {d.recently_watched.length ? (
-            <div className="list">
+            <div className="watch-shelf">
               {d.recently_watched.map((m: Row) => (
                 <button
-                  className="list-row"
+                  className="watch-title"
                   key={m.id}
                   onClick={() => open(m.id)}
                 >
-                  <span className="mini-icon">
-                    <CheckCheck size={17} />
-                  </span>
-                  <b>{m.title}</b>
+                  <CandidateArtwork
+                    poster={`/api/media/${m.id}/poster`}
+                    title={m.title}
+                  />
+                  <strong>{m.title}</strong>
                   <small>{date(m.last_watched)}</small>
-                  <ChevronRight size={15} />
                 </button>
               ))}
             </div>
           ) : (
-            <Empty icon={Film} title="The story starts with a sync">
-              Completed watch activity will appear here after you connect and
-              sync Plex.
+            <Empty icon={Film} title="Your next watch belongs here">
+              Completed watch activity appears after you connect and synchronize
+              Plex.
             </Empty>
           )}
         </section>
-        <section className="panel">
+        <section className="panel schedule-panel">
           <div className="section-heading">
-            <h2>Next on the schedule</h2>
-            <CalendarClock size={19} />
+            <h2>Coming up</h2>
+            <CalendarClock size={18} />
           </div>
           {d.upcoming.length ? (
             <div className="list">
-              {d.upcoming.map((s: Row) => (
-                <div className="list-row" key={s.id}>
-                  <Clock3 size={18} />
-                  <b>{s.name}</b>
-                  <small>{date(s.next_at)}</small>
+              {d.upcoming.map((item: Row) => (
+                <div className="list-row" key={item.id}>
+                  <Clock3 size={17} />
+                  <b>{item.name}</b>
+                  <small>{date(item.next_at)}</small>
                 </div>
               ))}
             </div>
           ) : (
-            <Empty icon={CalendarClock} title="On your time">
-              Add a schedule for library syncs, evaluation, and cleanup in
-              Settings.
+            <Empty icon={CalendarClock} title="You set the pace">
+              Schedule synchronization, evaluation, and cleanup in Settings.
             </Empty>
           )}
           <div className="footnote">
-            {d.settings.dry_run
-              ? "Dry-run is on. Scheduled cleanup simulates all deletions."
-              : "Live deletion is enabled. Scheduled cleanup can permanently remove eligible files."}
+            <Play size={14} />
+            Active Plex streams:{" "}
+            {Array.isArray(streams.data) ? streams.data.length : "Unavailable"}
+            {streams.error ? " · could not verify connection" : ""}
           </div>
+          <Button kind="wide quiet" onClick={() => navigate("History")}>
+            View recent activity <ArrowRight size={15} />
+          </Button>
         </section>
       </div>
     </>
@@ -963,7 +1019,7 @@ function Libraries({ revision, refresh, open }: Props) {
     <>
       <PageHeading
         title="Your library"
-        description="See what you have, how it’s watched, and what’s worth keeping."
+        description="Movies, shows, and the details that matter."
       >
         <Button onClick={() => runJob("full_sync")}>
           <RefreshCw size={16} />
@@ -1056,7 +1112,7 @@ function Libraries({ revision, refresh, open }: Props) {
         <section className="panel">
           <Empty
             icon={Film}
-            title={q ? "No matching titles" : "A library with possibility"}
+            title={q ? "No matching titles" : "Your library is not synced yet"}
           >
             {q
               ? "Try another title or change your filters."
@@ -1531,8 +1587,8 @@ function Rules({ revision, refresh }: Props) {
   return (
     <>
       <PageHeading
-        title="Make room. On your terms."
-        description="Clear conditions. Predictable decisions. Protection always comes first."
+        title="Retention rules"
+        description="Choose what becomes eligible. Protections always come first."
       >
         <Button onClick={() => runJob("evaluate")}>
           <Play size={15} />
@@ -1555,7 +1611,10 @@ function Rules({ revision, refresh }: Props) {
         <Loading />
       ) : rules.length === 0 ? (
         <section className="panel">
-          <Empty icon={SlidersHorizontal} title="Good rules make space">
+          <Empty
+            icon={SlidersHorizontal}
+            title="Create your first retention rule"
+          >
             Start with watched movies after 90 days, then simulate the result
             before making any decisions.
           </Empty>
@@ -1918,7 +1977,7 @@ function Queue({ revision, refresh, open }: Props) {
   return (
     <>
       <PageHeading
-        title="A considered cleanup."
+        title="Cleanup queue"
         description="Review the reason, inspect every file, and decide what happens next."
       >
         <Button onClick={() => runJob("evaluate")}>
@@ -1995,7 +2054,7 @@ function Queue({ revision, refresh, open }: Props) {
         <Loading />
       ) : !d.items.length ? (
         <section className="panel">
-          <Empty icon={ListFilter} title="Everything in its own time">
+          <Empty icon={ListFilter} title="No cleanup candidates">
             Candidates appear when your retention rules match. Evaluate your
             rules after syncing the library.
           </Empty>
@@ -2034,7 +2093,7 @@ function Queue({ revision, refresh, open }: Props) {
                 </p>
                 <div className="candidate-meta">
                   <Badge tone={c.state === "Ready" ? "green" : "neutral"}>
-                    {c.state}
+                    {c.state.replace(/([a-z])([A-Z])/g, "$1 $2")}
                   </Badge>
                   <span>{c.files.length} exact files</span>
                   <span>{bytes(c.logical_bytes)} logical</span>
@@ -2086,24 +2145,34 @@ function Queue({ revision, refresh, open }: Props) {
                   "Postponed",
                 ].includes(c.state) && (
                   <>
-                    <Button kind="quiet" onClick={() => action(c, "approve")}>
+                    <Button kind="primary" onClick={() => action(c, "approve")}>
                       <Check size={14} />
                       Approve
                     </Button>
-                    <Button kind="quiet" onClick={() => action(c, "postpone")}>
-                      <Clock3 size={14} />
-                      Postpone 7 days
-                    </Button>
-                    <Button kind="quiet" onClick={() => action(c, "keep")}>
-                      <ShieldCheck size={14} />
-                      Keep Forever
-                    </Button>
-                    <Button
-                      kind="quiet danger-text"
-                      onClick={() => action(c, "reject")}
-                    >
-                      Reject
-                    </Button>
+                    <details className="candidate-more">
+                      <summary>
+                        More actions <ChevronRight size={13} />
+                      </summary>
+                      <div>
+                        <Button
+                          kind="quiet"
+                          onClick={() => action(c, "postpone")}
+                        >
+                          <Clock3 size={14} />
+                          Postpone 7 days
+                        </Button>
+                        <Button kind="quiet" onClick={() => action(c, "keep")}>
+                          <ShieldCheck size={14} />
+                          Keep Forever
+                        </Button>
+                        <Button
+                          kind="quiet danger-text"
+                          onClick={() => action(c, "reject")}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    </details>
                   </>
                 )}
               </div>
@@ -2195,7 +2264,7 @@ function HistoryPage({ revision, refresh }: Props) {
   return (
     <>
       <PageHeading
-        title="Every decision, recorded."
+        title="Activity history"
         description="A durable record of cleanup, synchronization and the reasons behind them."
       >
         <Button onClick={refresh}>
@@ -2676,21 +2745,17 @@ function NotificationsPage({ revision, refresh }: Props) {
   );
 }
 
-const settingTabs = [
-  "Setup",
-  "General",
-  "Plex",
-  "Radarr",
-  "Sonarr",
-  "Seerr",
-  "Libraries",
-  "Storage",
-  "Scheduler",
-  "Deletion Safety",
-  "Authentication",
-  "Appearance",
-  "Backup & Maintenance",
-  "System Diagnostics",
+const settingGroups = [
+  { name: "Workspace", tabs: ["Setup", "General", "Appearance"] },
+  { name: "Connections", tabs: ["Plex", "Radarr", "Sonarr", "Seerr"] },
+  {
+    name: "Library & cleanup",
+    tabs: ["Libraries", "Storage", "Scheduler", "Deletion Safety"],
+  },
+  {
+    name: "Administration",
+    tabs: ["Authentication", "Backup & Maintenance", "System Diagnostics"],
+  },
 ];
 function SettingsPage({ revision, refresh, navigate }: Props) {
   const [tab, setTab] = useState("Setup"),
@@ -2719,20 +2784,31 @@ function SettingsPage({ revision, refresh, navigate }: Props) {
   return (
     <>
       <PageHeading
-        title="Set up for peace of mind."
-        description="Connections, retention and safety. Everything stays under your control."
+        title="Settings"
+        description="Make Deletarr work for your library."
       />
       <ErrorBox text={error} />
       <div className="settings-layout">
         <nav className="settings-tabs" aria-label="Settings sections">
-          {settingTabs.map((t) => (
-            <button
-              key={t}
-              className={tab === t ? "selected" : ""}
-              onClick={() => setTab(t)}
+          {settingGroups.map((group) => (
+            <div
+              className="settings-group"
+              key={group.name}
+              role="group"
+              aria-label={group.name}
             >
-              {t}
-            </button>
+              <span>{group.name}</span>
+              {group.tabs.map((t) => (
+                <button
+                  key={t}
+                  className={tab === t ? "selected" : ""}
+                  aria-current={tab === t ? "page" : undefined}
+                  onClick={() => setTab(t)}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <section className="panel settings-body">
