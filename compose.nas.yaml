@@ -1,0 +1,38 @@
+# Paste into your NAS Docker project's Compose editor. No SSH or build required.
+# Starts without media mounts so you can first explore the UI safely.
+name: deletarr
+services:
+  deletarr:
+    image: ghcr.io/cloudcookch/deletearr:preview
+    container_name: deletarr
+    restart: unless-stopped
+    init: true
+    ports:
+      - "8980:8980"
+    environment:
+      DELETARR_CONFIG: /config
+      DELETARR_PORT: "8980"
+      DELETARR_SECURE_COOKIE: "false"
+    volumes:
+      - deletarr_config:/config
+      # Add existing NAS directories when ready to test library indexing:
+      # - type: bind
+      #   source: /REPLACE/WITH/YOUR/Movies
+      #   target: /media/movies
+      #   bind:
+      #     create_host_path: false
+      # - type: bind
+      #   source: /REPLACE/WITH/YOUR/TV
+      #   target: /media/tv
+      #   bind:
+      #     create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 120s
+volumes:
+  deletarr_config:

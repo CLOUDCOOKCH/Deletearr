@@ -10,6 +10,11 @@ A single non-root container serves the React interface, FastAPI backend, SQLite 
 
 ## Deployment
 
+**NAS without SSH:** use the prebuilt preview image and paste
+[compose.nas.yaml](compose.nas.yaml) into your NAS Docker project's editor.
+See the [browser-only NAS instructions](docs/NAS.md), including first-run
+token retrieval through the container console and package visibility checks.
+
 Use a Linux Docker host with Compose v2. The container supports the Linux filesystem APIs used for descriptor-relative deletion. Native Windows execution is unsupported; Windows Docker Desktop must run Linux containers. NAS compatibility depends on working Linux bind mounts, UID/GID permissions and stable filesystem identities; UGOS Pro has not been tested on hardware.
 
 ```sh
@@ -25,7 +30,11 @@ Open **http://localhost:8980**. Read `config/setup-token` locally and enter it i
 
 Compose binds to loopback by default. For LAN access, deliberately set `DELETARR_BIND` to your host LAN IP, or configure a reverse proxy. For HTTPS, set `DELETARR_ORIGIN` to the exact external origin and `DELETARR_SECURE_COOKIE=true` in the container environment. See [configuration](docs/CONFIGURATION.md).
 
-The checked-in Compose file builds a local image. The release workflow can publish versioned AMD64/ARM64 images to `ghcr.io/<your-owner>/<your-repository>` after a GitHub release. **No official image has been published by this checkout.** After publishing, use that verified image tag instead of `build:`.
+The default Compose file builds a local image. The NAS preview workflow publishes
+AMD64/ARM64 images to `ghcr.io/cloudcookch/deletearr:preview` on application changes
+to the `deletarr` branch. Check its successful workflow run before pulling a new
+preview. The release workflow separately publishes versioned images after a
+deliberate GitHub release. Preview builds are for testing, not production certification.
 
 ## First run
 
