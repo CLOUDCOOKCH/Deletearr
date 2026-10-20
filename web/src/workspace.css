@@ -1291,3 +1291,79 @@ footer {
     transition: none;
   }
 }
+
+/* Keep routine work in view; reveal secondary information when requested. */
+.sidebar nav {
+  margin-top: 34px;
+}
+.main-shell {
+  background-image: none;
+}
+.review-focus {
+  padding: 24px 27px;
+}
+.review-focus h3 {
+  margin-top: 24px;
+  font-size: 26px;
+}
+.review-focus p {
+  margin-bottom: 20px;
+}
+.review-live {
+  font-size: 11px !important;
+  margin: 16px 0 0 !important;
+}
+.dashboard-disclosure {
+  border-bottom: 1px solid var(--line);
+  padding: 0;
+}
+.dashboard-disclosure > summary {
+  padding: 19px 0;
+  font-size: 13px;
+  font-weight: 550;
+}
+.dashboard-disclosure > summary small {
+  float: right;
+  font-size: 11px;
+  font-weight: 400;
+}
+.dashboard-disclosure > .connection-strip {
+  margin: 0 0 20px;
+}
+.dashboard-disclosure > .dashboard-columns {
+  margin: 0 0 20px;
+}
+.settings-picker {
+  display: none;
+}
+footer {
+  justify-content: flex-end;
+  border-top: 0;
+  font-size: 10px;
+}
+@media (max-width: 900px) {
+  .settings-tabs {
+    display: none;
+  }
+  .settings-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .settings-picker select {
+    width: 100%;
+  }
+}
+@media (max-width: 640px) {
+  .review-focus {
+    padding: 22px;
+  }
+  .dashboard-disclosure > summary {
+    font-size: 12px;
+  }
+  .dashboard-disclosure > summary small {
+    font-size: 10px;
+  }
+}

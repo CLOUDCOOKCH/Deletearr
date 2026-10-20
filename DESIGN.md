@@ -99,16 +99,16 @@ Manrope Variable is locally hosted through `@fontsource-variable/manrope`; no ex
 
 The desktop frame uses a fixed 212px sidebar, a 64px sticky topbar, and a content region capped at 1540px with 34px vertical/36px horizontal padding. The topbar keeps the route and dry-run/live status visible while scrolling.
 
-The Overview dashboard uses an unboxed four-column library summary above a two-column cleanup/storage region (`1.13fr 1fr`, 24px gap). A single four-service connection strip follows. Recently watched artwork and upcoming activity are secondary, in a `1.25fr 1fr` region. Empty states describe the next real action. Candidate size is explicitly a logical estimate, not a promise of reclaimed capacity.
+The Overview dashboard uses an unboxed four-column library summary above a two-column cleanup/storage region (`1.13fr 1fr`, 24px gap). Connections and Library activity follow as closed native disclosures. Opening Connections reveals the four-service strip; Library activity reveals recent artwork and schedules in a `1.25fr 1fr` region. Empty states describe the next real action. Candidate size is explicitly a logical estimate, not a promise of reclaimed capacity.
 
 Responsive thresholds come from the final stylesheet:
 
 - At 1200px and below: 28px content padding, narrower candidate artwork/actions, and a 160px settings rail.
 - At 1000px and below: dashboard regions stack, connections become two columns, and candidate actions move beneath the main candidate information.
-- At 900px and below: sidebar narrows to 190px, library metrics become two columns, and settings navigation becomes wrapping grouped rows above the form.
+- At 900px and below: sidebar narrows to 190px, library metrics become two columns, and settings navigation becomes a single labelled section picker above the form.
 - At 640px and below: the main region fills the viewport, sidebar becomes a 232px toggle-controlled drawer, topbar is 60px, content padding is 26px/18px, and poster grids use two columns. Candidate actions span beneath artwork and information; secondary actions wrap after expansion.
 
-Dense tables retain their field relationships in horizontal scrolling containers. Settings groups are Workspace, Connections, Library & cleanup, and Administration; on compact screens their headings remain visible above wrapping controls.
+Dense tables retain their field relationships in horizontal scrolling containers. Settings groups are Workspace, Connections, Library & cleanup, and Administration; on compact screens native option groups preserve this organization in the section picker.
 
 ## Elevation & Depth
 
@@ -147,3 +147,7 @@ Grouped settings navigation uses labelled navigation and groups; the selected se
 - **Don't** present logical file size as guaranteed reclaimed space, invent analytics, or add promotional imagery to the operational app.
 - **Don't** hide dry-run/live context or weaken the protected activation and exact-plan confirmation flows.
 - **Don't** translate this task's Taste annotation into a permanent preference for every future surface.
+
+## Decluttering
+
+The shared shell keeps the current route and deletion mode, without duplicate header shortcuts, workspace labels, or slogans. Notifications and settings remain in main navigation; source and license links remain in a quiet footer. Optional anime geometry appears in theme previews rather than behind operational content. The dashboard uses one emphasized action according to candidate availability, omits zero-value cleanup estimates, and keeps secondary connections/activity closed until requested. Live deletion warnings, last-watched evidence, exact scope, approvals, and protected confirmations remain visible at the relevant decision points.

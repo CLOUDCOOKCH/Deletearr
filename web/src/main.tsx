@@ -15,7 +15,6 @@ import {
   CheckCheck,
   ChevronLeft,
   ChevronRight,
-  CircleHelp,
   Clock3,
   Database,
   Film,
@@ -28,7 +27,6 @@ import {
   LockKeyhole,
   LogOut,
   Menu,
-  MoreHorizontal,
   Play,
   Plus,
   RefreshCw,
@@ -36,7 +34,6 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
   Trash2,
   Tv,
   X,
@@ -511,14 +508,6 @@ function App() {
             {animeThemes[settings.data?.theme].name}
           </span>
         )}
-        <div className="workspace">
-          <span className="workspace-symbol">
-            <HardDrive size={19} />
-          </span>
-          <div>
-            Media workspace<small>Self-hosted · Private</small>
-          </div>
-        </div>
         <nav aria-label="Main navigation">
           {nav.map(([name, Icon]) => (
             <button
@@ -536,10 +525,6 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="local">
-            <span className="status-dot" />
-            Running locally <Badge>v0.1.0</Badge>
-          </div>
           <button
             onClick={async () => {
               await api("/auth/logout", "POST", {});
@@ -570,7 +555,6 @@ function App() {
               <Menu />
             </button>
             <span className="breadcrumb">
-              Deletarr <ChevronRight size={14} />
               <b>{page}</b>
             </span>
           </div>
@@ -585,20 +569,6 @@ function App() {
                 ? "Live deletion enabled"
                 : "Dry-run mode"}
             </span>
-            <button
-              className="icon-button"
-              aria-label="Notifications"
-              onClick={() => navigate("Notifications")}
-            >
-              <Bell size={18} />
-            </button>
-            <button
-              className="icon-button"
-              aria-label="Open settings"
-              onClick={() => navigate("Settings")}
-            >
-              <CircleHelp size={18} />
-            </button>
           </div>
         </header>
         <main className="content" id="main-content" tabIndex={-1}>
@@ -621,12 +591,8 @@ function App() {
           )}
         </main>
         <footer>
-          Intelligent media retention. <a href="/api/source">Source code</a>
+          <a href="/api/source">Source code</a>
           <a href="/api/license">AGPL-3.0</a>
-          <span>
-            <ShieldCheck size={13} />
-            Your library. Your rules.
-          </span>
         </footer>
       </div>
       {toast && (
@@ -674,7 +640,7 @@ function PageHeading({
     <div className="page-heading">
       <div>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description && <p>{description}</p>}
       </div>
       <div className="actions">{children}</div>
     </div>
@@ -698,14 +664,14 @@ function Dashboard({ revision, refresh, navigate, open }: Props) {
   const live = d.settings.dry_run === false;
   return (
     <>
-      <PageHeading
-        title="Overview"
-        description="A little space. A better library."
-      >
+      <PageHeading title="Overview" description="">
         <Button onClick={() => runJob("full_sync").then(refresh)}>
           <RefreshCw size={16} /> Sync libraries
         </Button>
-        <Button kind="primary" onClick={() => runJob("evaluate").then(refresh)}>
+        <Button
+          kind={d.candidates ? "" : "primary"}
+          onClick={() => runJob("evaluate").then(refresh)}
+        >
           <Play size={15} /> Evaluate rules
         </Button>
       </PageHeading>
@@ -762,38 +728,40 @@ function Dashboard({ revision, refresh, navigate, open }: Props) {
         <section className="review-focus">
           <div className="review-focus-head">
             <h2>Your next cleanup</h2>
-            <Badge tone={live ? "red" : "green"}>
-              {live ? "Live mode" : "Dry-run"}
-            </Badge>
           </div>
           <h3>
             {d.candidates
               ? `${d.candidates} ${d.candidates === 1 ? "candidate" : "candidates"} to review.`
-              : "Nothing to clear. Room to enjoy."}
+              : "No cleanup candidates"}
           </h3>
           <p>
             {d.candidates
-              ? "See what matched your rules, check the last watch, and decide what stays."
-              : "Sync your library and evaluate your rules. Eligible titles will appear here for review."}
+              ? "Review what matched your rules and decide what stays."
+              : "Evaluate your rules to find eligible titles."}
           </p>
-          <div className="review-estimate">
-            <HardDrive size={18} />
-            <span>
-              <b>{bytes(d.candidate_logical_bytes)}</b> candidate file size
-              <small>
-                Logical estimate · actual reclaimed space may differ
-              </small>
-            </span>
-          </div>
-          <Button kind="primary" onClick={() => navigate("Cleanup Queue")}>
+          {d.candidates > 0 && (
+            <div className="review-estimate">
+              <HardDrive size={18} />
+              <span>
+                <b>{bytes(d.candidate_logical_bytes)}</b> candidate file size
+                <small>
+                  Logical estimate · actual reclaimed space may differ
+                </small>
+              </span>
+            </div>
+          )}
+          <Button
+            kind={d.candidates ? "primary" : ""}
+            onClick={() => navigate("Cleanup Queue")}
+          >
             Review cleanup queue <ArrowRight size={16} />
           </Button>
-          <div className="review-safety">
-            <ShieldCheck size={15} />
-            {live
-              ? "Live deletion enabled. Review every plan carefully."
-              : "Dry-run is on. Your media stays in place."}
-          </div>
+          {live && (
+            <p className="danger-text review-live">
+              Live deletion is enabled. Removed files cannot be recovered
+              through Deletarr.
+            </p>
+          )}
         </section>
         <section className="panel storage-panel">
           <div className="section-heading">
@@ -857,116 +825,127 @@ function Dashboard({ revision, refresh, navigate, open }: Props) {
               verify access.
             </Empty>
           )}
-          <div className="footnote">
-            <HardDrive size={14} />
-            Volumes can contain multiple media roots. Hardlinks affect actual
-            savings.
-          </div>
         </section>
       </div>
-      <section className="connection-strip" aria-label="Integration status">
-        {["plex", "radarr", "sonarr", "seerr"].map((name, i) => {
-          const service = d.integrations.find((x: Row) => x.kind === name);
-          const connected = service?.health === "connected";
-          return (
-            <button
-              className="connection"
-              key={name}
-              onClick={() => navigate("Settings")}
-            >
-              <span className={"service-icon service-" + name}>
-                {
-                  [
-                    <Play key="plex" />,
-                    <Film key="radarr" />,
-                    <Tv key="sonarr" />,
-                    <Search key="seerr" />,
-                  ][i]
-                }
-              </span>
-              <span>
-                <strong>{name[0].toUpperCase() + name.slice(1)}</strong>
-                <small>
-                  {connected
-                    ? "Connected"
-                    : service
-                      ? "Not verified"
-                      : "Not configured"}
-                </small>
-              </span>
-              <span
-                className={
-                  "connection-indicator" + (connected ? " connected" : "")
-                }
-                aria-hidden="true"
-              />
-            </button>
-          );
-        })}
-      </section>
-      <div className="dashboard-columns">
-        <section className="panel recently-watched">
-          <div className="section-heading">
-            <h2>Recently watched</h2>
-            <Button kind="quiet" onClick={() => navigate("Libraries")}>
-              View library <ArrowRight size={14} />
+      <details className="dashboard-disclosure">
+        <summary>
+          Connections{" "}
+          <small>
+            {d.integrations.filter((i: Row) => i.health === "connected").length}{" "}
+            of 4 connected
+          </small>
+        </summary>
+        <section className="connection-strip" aria-label="Integration status">
+          {["plex", "radarr", "sonarr", "seerr"].map((name, i) => {
+            const service = d.integrations.find((x: Row) => x.kind === name);
+            const connected = service?.health === "connected";
+            return (
+              <button
+                className="connection"
+                key={name}
+                onClick={() => navigate("Settings")}
+              >
+                <span className={"service-icon service-" + name}>
+                  {
+                    [
+                      <Play key="plex" />,
+                      <Film key="radarr" />,
+                      <Tv key="sonarr" />,
+                      <Search key="seerr" />,
+                    ][i]
+                  }
+                </span>
+                <span>
+                  <strong>{name[0].toUpperCase() + name.slice(1)}</strong>
+                  <small>
+                    {connected
+                      ? "Connected"
+                      : service
+                        ? "Not verified"
+                        : "Not configured"}
+                  </small>
+                </span>
+                <span
+                  className={
+                    "connection-indicator" + (connected ? " connected" : "")
+                  }
+                  aria-hidden="true"
+                />
+              </button>
+            );
+          })}
+        </section>
+      </details>
+      <details className="dashboard-disclosure">
+        <summary>
+          Library activity <small>Recent watches & schedules</small>
+        </summary>
+        <div className="dashboard-columns">
+          <section className="panel recently-watched">
+            <div className="section-heading">
+              <h2>Recently watched</h2>
+              <Button kind="quiet" onClick={() => navigate("Libraries")}>
+                View library <ArrowRight size={14} />
+              </Button>
+            </div>
+            {d.recently_watched.length ? (
+              <div className="watch-shelf">
+                {d.recently_watched.map((m: Row) => (
+                  <button
+                    className="watch-title"
+                    key={m.id}
+                    onClick={() => open(m.id)}
+                  >
+                    <CandidateArtwork
+                      poster={`/api/media/${m.id}/poster`}
+                      title={m.title}
+                    />
+                    <strong>{m.title}</strong>
+                    <small>{date(m.last_watched)}</small>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <Empty icon={Film} title="Your next watch belongs here">
+                Completed watch activity appears after you connect and
+                synchronize Plex.
+              </Empty>
+            )}
+          </section>
+          <section className="panel schedule-panel">
+            <div className="section-heading">
+              <h2>Coming up</h2>
+              <CalendarClock size={18} />
+            </div>
+            {d.upcoming.length ? (
+              <div className="list">
+                {d.upcoming.map((item: Row) => (
+                  <div className="list-row" key={item.id}>
+                    <Clock3 size={17} />
+                    <b>{item.name}</b>
+                    <small>{date(item.next_at)}</small>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty icon={CalendarClock} title="You set the pace">
+                Schedule synchronization, evaluation, and cleanup in Settings.
+              </Empty>
+            )}
+            <div className="footnote">
+              <Play size={14} />
+              Active Plex streams:{" "}
+              {Array.isArray(streams.data)
+                ? streams.data.length
+                : "Unavailable"}
+              {streams.error ? " · could not verify connection" : ""}
+            </div>
+            <Button kind="wide quiet" onClick={() => navigate("History")}>
+              View recent activity <ArrowRight size={15} />
             </Button>
-          </div>
-          {d.recently_watched.length ? (
-            <div className="watch-shelf">
-              {d.recently_watched.map((m: Row) => (
-                <button
-                  className="watch-title"
-                  key={m.id}
-                  onClick={() => open(m.id)}
-                >
-                  <CandidateArtwork
-                    poster={`/api/media/${m.id}/poster`}
-                    title={m.title}
-                  />
-                  <strong>{m.title}</strong>
-                  <small>{date(m.last_watched)}</small>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <Empty icon={Film} title="Your next watch belongs here">
-              Completed watch activity appears after you connect and synchronize
-              Plex.
-            </Empty>
-          )}
-        </section>
-        <section className="panel schedule-panel">
-          <div className="section-heading">
-            <h2>Coming up</h2>
-            <CalendarClock size={18} />
-          </div>
-          {d.upcoming.length ? (
-            <div className="list">
-              {d.upcoming.map((item: Row) => (
-                <div className="list-row" key={item.id}>
-                  <Clock3 size={17} />
-                  <b>{item.name}</b>
-                  <small>{date(item.next_at)}</small>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <Empty icon={CalendarClock} title="You set the pace">
-              Schedule synchronization, evaluation, and cleanup in Settings.
-            </Empty>
-          )}
-          <div className="footnote">
-            <Play size={14} />
-            Active Plex streams:{" "}
-            {Array.isArray(streams.data) ? streams.data.length : "Unavailable"}
-            {streams.error ? " · could not verify connection" : ""}
-          </div>
-          <Button kind="wide quiet" onClick={() => navigate("History")}>
-            View recent activity <ArrowRight size={15} />
-          </Button>
-        </section>
-      </div>
+          </section>
+        </div>
+      </details>
     </>
   );
 }
@@ -1978,7 +1957,7 @@ function Queue({ revision, refresh, open }: Props) {
     <>
       <PageHeading
         title="Cleanup queue"
-        description="Review the reason, inspect every file, and decide what happens next."
+        description="Review candidates before removing anything."
       >
         <Button onClick={() => runJob("evaluate")}>
           <RefreshCw size={16} />
@@ -1996,12 +1975,12 @@ function Queue({ revision, refresh, open }: Props) {
         <div>
           <b>
             {settings.data?.dry_run
-              ? "You’re in dry-run mode."
+              ? "Dry-run: no files will be deleted."
               : "Live deletion is enabled."}
           </b>
           <span>
             {settings.data?.dry_run
-              ? " Inspect real plans and simulate execution. Your media stays in place."
+              ? ""
               : " Files removed by Deletarr cannot be recovered through this application."}
           </span>
         </div>
@@ -2783,12 +2762,25 @@ function SettingsPage({ revision, refresh, navigate }: Props) {
   }
   return (
     <>
-      <PageHeading
-        title="Settings"
-        description="Make Deletarr work for your library."
-      />
+      <PageHeading title="Settings" description="" />
       <ErrorBox text={error} />
       <div className="settings-layout">
+        <div className="settings-picker">
+          <label htmlFor="settings-section-picker">Settings section</label>
+          <select
+            id="settings-section-picker"
+            value={tab}
+            onChange={(event) => setTab(event.target.value)}
+          >
+            {settingGroups.map((group) => (
+              <optgroup key={group.name} label={group.name}>
+                {group.tabs.map((section) => (
+                  <option key={section}>{section}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
         <nav className="settings-tabs" aria-label="Settings sections">
           {settingGroups.map((group) => (
             <div

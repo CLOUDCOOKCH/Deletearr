@@ -379,6 +379,25 @@ test("real application: onboarding, CRUD, safe defaults, desktop and mobile", as
   await expect(
     page.getByRole("heading", { name: "Storage overview" }),
   ).toBeVisible();
+  await page
+    .locator(".dashboard-disclosure > summary")
+    .filter({ hasText: "Connections" })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Integration status" }),
+  ).toBeVisible();
+  await page
+    .locator(".dashboard-disclosure > summary")
+    .filter({ hasText: "Connections" })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Integration status" }),
+  ).toBeHidden();
+  await page.getByText("Library activity", { exact: false }).click();
+  await expect(
+    page.getByRole("heading", { name: "Recently watched" }),
+  ).toBeVisible();
+  await page.getByText("Library activity", { exact: false }).click();
   await page.evaluate(() => document.fonts.ready);
   mkdirSync("docs/screenshots", { recursive: true });
   await page.screenshot({
@@ -468,12 +487,14 @@ test("real application: onboarding, CRUD, safe defaults, desktop and mobile", as
     .getByRole("button", { name: "Settings", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "Deletion Safety", exact: true })
-    .click();
+    .getByLabel("Settings section", { exact: true })
+    .selectOption("Deletion Safety");
   await expect(
     page.getByText("Dry-run is active. No files are deleted."),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Storage", exact: true }).click();
+  await page
+    .getByLabel("Settings section", { exact: true })
+    .selectOption("Storage");
   await page
     .getByRole("button", { name: "Find mapping suggestions", exact: true })
     .click();

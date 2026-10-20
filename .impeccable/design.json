@@ -77,7 +77,13 @@
         "name": "reduced-padding",
         "value": "1200px"
       }
-    ]
+    ],
+    "decluttering": {
+      "dashboard": "Cleanup and storage first; connections and activity in native closed disclosures.",
+      "compactSettings": "One labelled native select with section optgroups at widths up to 900px.",
+      "shell": "Current route and deletion mode; no duplicate shortcuts or slogans.",
+      "artwork": "Decorative anime motifs remain in theme previews only."
+    }
   },
   "components": [
     {
