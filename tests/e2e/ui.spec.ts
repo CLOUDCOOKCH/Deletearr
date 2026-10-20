@@ -75,11 +75,13 @@ test("cleanup queue displays posters, watch dates and missing-history states", a
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByAltText("Queue movie poster")).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBeTruthy();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBeTruthy();
   await page.screenshot({
     path: "test-results/queue-mobile.png",
     fullPage: true,
@@ -185,11 +187,13 @@ test("Plex connection sign-in, server selection and responsive settings", async 
   await expect(
     page.getByRole("button", { name: "Connect selected server" }),
   ).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBeTruthy();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBeTruthy();
   await page.screenshot({
     path: "test-results/plex-connect-mobile.png",
     fullPage: true,
