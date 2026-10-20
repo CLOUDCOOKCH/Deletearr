@@ -122,7 +122,7 @@ class SettingsInput(Strict):
     max_logical_bytes: int = Field(default=100_000_000_000, ge=1)
     max_reclaimable_bytes: int = Field(default=100_000_000_000, ge=1)
     max_library_percent: int = Field(default=10, ge=1, le=100)
-    theme: Literal["light", "dark", "system"] = "system"
+    theme: Literal["light", "dark", "system", "one-piece", "black-clover", "highschool-dxd"] = "system"
     accent: str = Field(default="#b0ed83", pattern=r"^#[0-9a-fA-F]{6}$")
     onboarding_complete: bool = False
 
@@ -1182,6 +1182,8 @@ def create_app(directory=None, run_worker=True):
     dist = Path(os.getenv("DELETARR_WEB", str(Path(__file__).parent.parent / "web" / "dist")))
     if dist.exists():
         app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+        if (dist / "themes").is_dir():
+            app.mount("/themes", StaticFiles(directory=dist / "themes"), name="themes")
 
         @app.get("/{path:path}")
         def frontend(path: str):

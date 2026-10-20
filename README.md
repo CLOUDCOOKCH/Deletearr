@@ -60,7 +60,7 @@ Permanent deletion is off on first installation. Enabling it requires the admini
 - SQLite WAL, versioned migrations, consistent backups, cron/timezone or interval schedules, duplicate prevention, backoff, cancellation and restart recovery.
 - Local Argon2id authentication, enrolled-identity Plex sign-in, HttpOnly sessions, CSRF/origin checks and encrypted integration credentials.
 - In-app, Discord, Telegram and generic webhook notifications; audit history and reconciliation diagnostics.
-- System/light/dark appearance, configurable accent color, responsive navigation and keyboard-accessible controls.
+- System/light/dark appearance, configurable accent color, and optional One Piece, Black Clover and High School DxD theme palettes with original decorative motifs. Responsive navigation and keyboard-accessible controls.
 
 ## Safety and supported limitations
 

@@ -1602,7 +1602,7 @@ summary .badge {
   background: #dae6ce;
 }
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]):not([data-theme="light"]) {
+  :root:is([data-theme="system"], :not([data-theme])) {
     --bg: #f5f6f1;
     --surface: #fff;
     --raised: #edf0e7;
@@ -2109,19 +2109,27 @@ footer span {
   margin-left: auto;
 }
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .mode {
+  :root:is([data-theme="system"], [data-theme="light"], :not([data-theme]))
+    .mode {
     color: #435636;
   }
-  :root:not([data-theme="dark"]) .badge.green {
+  :root:is([data-theme="system"], [data-theme="light"], :not([data-theme]))
+    .badge.green {
     color: #42622e;
     background: #eef6e9;
   }
-  :root:not([data-theme="dark"]) .sidebar nav button.active,
-  :root:not([data-theme="dark"]) .settings-tabs button.selected {
+  :root:is([data-theme="system"], [data-theme="light"], :not([data-theme]))
+    .sidebar
+    nav
+    button.active,
+  :root:is([data-theme="system"], [data-theme="light"], :not([data-theme]))
+    .settings-tabs
+    button.selected {
     color: #41602c;
     background: #dfebd4;
   }
-  :root:not([data-theme="dark"]) .service-state.connected {
+  :root:is([data-theme="system"], [data-theme="light"], :not([data-theme]))
+    .service-state.connected {
     color: #42622e;
   }
 }

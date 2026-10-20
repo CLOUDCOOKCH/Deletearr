@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" fill="none" stroke="#91e0ac">
+  <g opacity=".2" stroke-width="1.5"><path d="m200 22 152 89v178l-152 89-152-89V111Z"/><path d="m200 42 134 80v156l-134 80-134-80V122Z"/><circle cx="200" cy="200" r="105"/></g>
+  <g opacity=".3" stroke-width="2"><path d="M200 200c-90 0-95-95-42-95 29 0 42 48 42 95Zm0 0c0-90 95-95 95-42 0 29-48 42-95 42Zm0 0c90 0 95 95 42 95-29 0-42-48-42-95Zm0 0c0 90-95 95-95 42 0-29 48-42 95-42Z"/><path d="m200 200 63 97"/></g>
+  <path opacity=".3" stroke="#d5bf83" d="m172 36 28-14 28 14M48 180v40m304-40v40m-180 144 28 14 28-14"/>
+</svg>

@@ -47,6 +47,8 @@ import { api, bytes, date, setCsrf, setTimezone } from "./api";
 import "./style.css";
 import { PressureSettings } from "./PressureSettings";
 import { MappingSuggestions } from "./MappingSuggestions";
+import { AppearanceSettings, animeThemes } from "./AppearanceSettings";
+import "./themes.css";
 
 type Row = Record<string, any>;
 type Condition = {
@@ -433,7 +435,7 @@ function App() {
       document.documentElement.dataset.theme = settings.data.theme;
       document.documentElement.style.setProperty(
         "--accent",
-        settings.data.accent,
+        animeThemes[settings.data.theme]?.accent || settings.data.accent,
       );
       setTimezone(settings.data.timezone);
     }
@@ -474,6 +476,11 @@ function App() {
         inert={smallScreen && !mobile}
       >
         <Logo />
+        {animeThemes[settings.data?.theme] && (
+          <span className="active-theme-name">
+            {animeThemes[settings.data?.theme].name}
+          </span>
+        )}
         <div className="workspace">
           <span className="workspace-symbol">
             <HardDrive size={19} />
@@ -3108,22 +3115,7 @@ function SettingsPage({ revision, refresh, navigate }: Props) {
                   </Field>
                 )}
                 {tab === "Appearance" && (
-                  <>
-                    <Field label="Theme">
-                      <select name="theme" defaultValue={s.theme}>
-                        <option value="system">Use system preference</option>
-                        <option value="dark">Dark</option>
-                        <option value="light">Light</option>
-                      </select>
-                    </Field>
-                    <Field label="Accent color">
-                      <input
-                        type="color"
-                        name="accent"
-                        defaultValue={s.accent}
-                      />
-                    </Field>
-                  </>
+                  <AppearanceSettings theme={s.theme} accent={s.accent} />
                 )}
                 {tab === "Deletion Safety" && (
                   <>

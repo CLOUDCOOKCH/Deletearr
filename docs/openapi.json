@@ -2859,7 +2859,10 @@
             "enum": [
               "light",
               "dark",
-              "system"
+              "system",
+              "one-piece",
+              "black-clover",
+              "highschool-dxd"
             ],
             "title": "Theme",
             "default": "system"

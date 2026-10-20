@@ -3,6 +3,106 @@ import { readFileSync, mkdirSync } from "node:fs";
 const origin = process.env.DELETARR_TEST_URL || "http://127.0.0.1:8980";
 const password = "UI-test-only-password-1234";
 
+test("anime themes persist, remain dark under a light system preference, and preserve safety settings", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await signIn(page);
+  const initial = await (await page.request.get("/api/settings")).json();
+  for (const [value, name, background, accent] of [
+    ["one-piece", "One Piece", "rgb(11, 22, 35)", "#f4c56a"],
+    ["black-clover", "Black Clover", "rgb(11, 20, 18)", "#91e0ac"],
+    ["highschool-dxd", "High School DxD", "rgb(24, 14, 25)", "#ef9fbe"],
+  ]) {
+    await page
+      .getByRole("navigation", { name: "Main navigation" })
+      .getByRole("button", { name: "Settings", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Appearance", exact: true }).click();
+    await page.getByRole("radio", { name: new RegExp(name) }).check();
+    const saved = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/api/settings") && r.request().method() === "PUT",
+    );
+    await page
+      .getByRole("button", { name: "Save settings", exact: true })
+      .click();
+    expect((await saved).ok()).toBeTruthy();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", value);
+    await expect(page.locator("html")).toHaveCSS(
+      "background-color",
+      background,
+    );
+    const contrast = await page.evaluate(() => {
+      const style = getComputedStyle(document.documentElement);
+      const luminance = (hex: string) => {
+        const channels = [1, 3, 5]
+          .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+          .map((v) =>
+            v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4,
+          );
+        return (
+          channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+        );
+      };
+      const ratio = (a: string, b: string) => {
+        const x = luminance(a),
+          y = luminance(b);
+        return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+      };
+      const token = (name: string) => style.getPropertyValue(name).trim();
+      return {
+        muted: ratio(token("--muted"), token("--surface")),
+        body: ratio(token("--text"), token("--surface")),
+        button: ratio(token("--accent-text"), token("--accent")),
+        accent: token("--accent"),
+        scheme: style.colorScheme,
+      };
+    });
+    expect(contrast.muted).toBeGreaterThanOrEqual(4.5);
+    expect(contrast.body).toBeGreaterThanOrEqual(4.5);
+    expect(contrast.button).toBeGreaterThanOrEqual(4.5);
+    expect(contrast.accent).toBe(accent);
+    expect(contrast.scheme).toBe("dark");
+    await expect
+      .poll(() =>
+        page
+          .locator(".theme-preview img")
+          .evaluateAll((images) =>
+            images.every(
+              (image) =>
+                (image as HTMLImageElement).complete &&
+                (image as HTMLImageElement).naturalWidth > 0,
+            ),
+          ),
+      )
+      .toBeTruthy();
+    await page.getByRole("button", { name: "Dismiss notification" }).click();
+    await page.screenshot({
+      path: `test-results/theme-${value}-desktop.png`,
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      )
+      .toBeTruthy();
+    await page.screenshot({
+      path: `test-results/theme-${value}-mobile.png`,
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", value);
+    const settings = await (await page.request.get("/api/settings")).json();
+    expect(settings.dry_run).toBe(initial.dry_run);
+    expect(settings.live_enrolled).toBe(initial.live_enrolled);
+    expect(settings.accent).toBe(initial.accent);
+  }
+});
+
 test("cleanup queue displays posters, watch dates and missing-history states", async ({
   page,
 }) => {

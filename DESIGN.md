@@ -11,3 +11,13 @@ Desktop uses a 232px fixed sidebar, 74px topbar and 38px content padding. Breakp
 Form controls have explicit labels with separate help descriptions. Native dialogs preserve focus and Escape behavior. Network failures are visible and actionable; dry-run/live state is present in the application header. Live activation is a protected-focus destructive flow with password and an explicit acknowledgment checkbox. Exact-plan inspection precedes confirmation of count and bytes.
 
 Motion is limited to brief state transitions and reduced-motion preferences are respected. Screenshot evidence must wait for menu transitions and dismiss transient notifications before claiming a stable viewport.
+
+Appearance also offers three optional dark anime-inspired worlds: One Piece
+(ocean blue, treasure gold, compass geometry), Black Clover (emerald, grimoire
+black, clover and bookplate geometry), and High School DxD (crimson, midnight
+violet, arcane ring geometry). Their original SVG motifs are decorative and
+served locally. They retain the shared layouts, readable text, independent
+destructive-action colors and all operational safety behavior. Each preset has
+a fixed signature accent; the administrator's custom accent is preserved for
+System, Dark and Light. System light-mode selectors never override these dark
+presets. The appearance picker previews each world before saving.
