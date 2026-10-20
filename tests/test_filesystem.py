@@ -1,9 +1,40 @@
+import errno
 import json
 import os
 
 import pytest
 
 from deletarr.security import SafetyError
+
+
+@pytest.mark.parametrize(
+    "code,expected",
+    [
+        (errno.EACCES, "Permission denied for container UID"),
+        (errno.EROFS, "mount is read-only"),
+        (errno.ENOENT, "Directory not found inside the container"),
+        (errno.ENOTDIR, "no symlink components"),
+    ],
+)
+def test_root_authorization_explains_filesystem_failures(system, monkeypatch, code, expected):
+    def fail(*args):
+        raise OSError(code, "private exception details")
+
+    fs = system.app.state.catalog.fs
+    monkeypatch.setattr(fs, "register", fail)
+    response = system.client.post(
+        "/api/storage/roots", json={"path": "/media/movies", "confirmation": "AUTHORIZE THIS MEDIA ROOT"}
+    )
+    assert response.status_code == 409, response.text
+    assert expected in response.json()["error"]
+    assert "private exception details" not in response.text
+    monkeypatch.setattr(fs, "reauthorize", fail)
+    response = system.client.post(
+        f"/api/storage/roots/{system.root_id}/reauthorize",
+        json={"path": str(system.root), "confirmation": "AUTHORIZE THIS MEDIA ROOT"},
+    )
+    assert response.status_code == 409, response.text
+    assert expected in response.json()["error"]
 
 
 def test_rejects_root_config_overlap_and_traversal(system):

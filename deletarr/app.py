@@ -1,3 +1,4 @@
+import errno
 import hmac
 import json
 import os
@@ -30,6 +31,26 @@ from .security import PASSWORDS, SafetyError, Vault, authenticate, new_session, 
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+def storage_access_error(path, exc):
+    if exc.errno in {errno.EACCES, errno.EPERM}:
+        reason = (
+            f"Permission denied for container UID {os.geteuid()} / GID {os.getegid()}. "
+            "Grant this identity read, write and directory traversal access in your NAS folder permissions. "
+            "Authorization must create a small mount marker, even in dry-run mode."
+        )
+    elif exc.errno == errno.EROFS:
+        reason = "The mount is read-only. Mount this media directory read/write so authorization can create its mount marker."
+    elif exc.errno == errno.ENOENT:
+        reason = "Directory not found inside the container. Add the media bind mount in Compose, redeploy, and use its target path (for example /media/movies), not the NAS /volume1 path."
+    elif exc.errno in {errno.ENOTDIR, errno.ELOOP}:
+        reason = (
+            "The path must be a real directory with no symlink components. Check the bind mount and container path."
+        )
+    else:
+        reason = f"Filesystem access failed ({errno.errorcode.get(exc.errno, 'UNKNOWN')}). Check the NAS mount and available space."
+    return SafetyError(f"Cannot authorize {path}: {reason}")
 
 
 class Login(Strict):
@@ -816,7 +837,10 @@ def create_app(directory=None, run_worker=True):
 
     @app.post("/api/storage/roots")
     def add_root(data: RootInput):
-        ident = filesystem.register(data.path)
+        try:
+            ident = filesystem.register(data.path)
+        except OSError as exc:
+            raise storage_access_error(data.path, exc) from exc
         db.audit("storage.authorized", ident, {"path": data.path})
         return {"id": ident}
 
@@ -842,7 +866,10 @@ def create_app(directory=None, run_worker=True):
             raise SafetyError("Confirm the exact existing media root path")
         if executor.lock.locked():
             raise SafetyError("Wait for the current execution to finish before reauthorizing storage")
-        filesystem.reauthorize(root_id)
+        try:
+            filesystem.reauthorize(root_id)
+        except OSError as exc:
+            raise storage_access_error(data.path, exc) from exc
         return {"ok": True, "next_step": "Run a full library sync to refresh every file identity"}
 
     @app.get("/api/jobs")
