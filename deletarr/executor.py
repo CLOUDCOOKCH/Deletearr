@@ -95,11 +95,21 @@ class Executor:
         files = {f["id"]: f for p in snapshots for f in p["files"]}
         if len(unique_items) > settings["max_items"] or len(files) > settings["max_files"]:
             raise SafetyError("Global item or physical file limit exceeded")
-        if (
-            sum(f["size"] for f in files.values()) > settings["max_logical_bytes"]
-            or sum(json.loads(f["identity"])["reclaimable"] for f in files.values()) > settings["max_reclaimable_bytes"]
-        ):
-            raise SafetyError("Global byte limit exceeded")
+        logical = sum(f["size"] for f in files.values())
+        reclaimable = sum(json.loads(f["identity"])["reclaimable"] for f in files.values())
+        if logical > settings["max_logical_bytes"] or reclaimable > settings["max_reclaimable_bytes"]:
+
+            def amount(value):
+                return f"{value:,} bytes ({value / 1_000_000_000:.2f} GB)"
+
+            raise SafetyError(
+                "Global byte limit exceeded. "
+                f"Logical total: {amount(logical)}; limit: {amount(settings['max_logical_bytes'])}. "
+                f"Estimated reclaimable total: {amount(reclaimable)}; limit: {amount(settings['max_reclaimable_bytes'])}. "
+                f"Scope: {len(unique_items)} media items, {len(files)} physical files. "
+                "Totals include this request plus live operation scopes from the last 24 hours. "
+                "Bulk cleanup checks all ready candidates together; it does not select a smaller batch."
+            )
         for library_id in {p["library_id"] for p in snapshots}:
             total = self.db.one(
                 "SELECT COUNT(*) AS n FROM media WHERE library_id=? AND kind IN ('movie','episode') AND missing=0",
@@ -341,7 +351,15 @@ class Executor:
                 if snapshot["kind"] == "movie" and remaining and not complete:
                     raise SafetyError("A multipart movie remains partly available; verify Seerr status manually")
                 await self.integrations.get("seerr").availability(media_id, remaining, complete=complete)
-                self.checkpoint(operation, f"seerr:{media_id}", "confirmed", {"remaining": remaining})
+                self.checkpoint(
+                    operation,
+                    f"seerr:{media_id}",
+                    "confirmed",
+                    {
+                        "remaining": remaining,
+                        "availability": "available" if complete else "partial" if remaining else "unknown",
+                    },
+                )
         self.db.execute("UPDATE operations SET state='Completed',updated_at=? WHERE id=?", (now(), operation))
         self.transition(snapshot["candidate_id"], "Completed")
         self.notifications.emit("cleanup_completed", f"Cleanup completed: {snapshot['title']}")

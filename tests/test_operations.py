@@ -96,6 +96,46 @@ def test_rolling_budget_cannot_be_bypassed_by_manual_jobs(system):
         system.app.state.executor.build(other["id"])
 
 
+@pytest.mark.parametrize("setting", ["max_logical_bytes", "max_reclaimable_bytes"])
+def test_byte_limit_reports_exact_totals_and_both_configured_limits(system, setting):
+    add_movie(system)
+    row = candidate(system)
+    executor = system.app.state.executor
+    snapshot = executor.build(row["id"])
+    settings = system.db.settings()
+    settings[setting] = 1
+    settings.pop("version")
+    system.db.execute("UPDATE settings SET data=?", (encode(settings),))
+    with pytest.raises(SafetyError, match="Global byte limit exceeded") as error:
+        executor.limits([snapshot])
+    message = str(error.value)
+    assert "Logical total: 8,192 bytes" in message
+    assert "Estimated reclaimable total:" in message
+    assert "limit: 1 bytes" in message
+    assert "last 24 hours" in message
+    assert "all ready candidates together" in message
+    assert not system.db.all("SELECT * FROM operations")
+
+
+def test_combined_ready_candidates_can_exceed_limit_even_when_each_fits(system):
+    add_movie(system, key="1")
+    add_movie(system, key="2")
+    rule = add_rule(system)
+    system.app.state.engine.run(persist=True)
+    executor = system.app.state.executor
+    plans = [
+        executor.build(row["id"]) for row in system.db.all("SELECT * FROM candidates WHERE rule_id=?", (rule["id"],))
+    ]
+    settings = system.db.settings()
+    settings["max_logical_bytes"] = 10_000
+    settings.pop("version")
+    system.db.execute("UPDATE settings SET data=?", (encode(settings),))
+    for plan in plans:
+        executor.limits([plan])
+    with pytest.raises(SafetyError, match="Logical total: 16,384 bytes"):
+        executor.limits(plans)
+
+
 def test_pressure_target_orders_oldest_and_respects_hardlinks(system, monkeypatch):
     a, _, _ = add_movie(system, key="1")
     b, _, _ = add_movie(system, key="2")

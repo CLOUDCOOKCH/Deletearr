@@ -12,7 +12,7 @@ def plex_cloud(monkeypatch):
         if path == "/api/v2/pins":
             return {"id": 12, "code": "test-code"}
         if path == "/api/v2/pins/12":
-            return {} if state["pending"] else {"authToken": "cloud-secret"}
+            return {} if state["pending"] else {"authToken": "test-only-cloud-token"}
         if path == "/api/v2/user":
             return {"id": 123}
         if path == "/api/v2/resources":
@@ -22,12 +22,12 @@ def plex_cloud(monkeypatch):
                     "clientIdentifier": "owned-server",
                     "owned": state["owned"],
                     "provides": "server",
-                    "accessToken": "server-secret",
-                    "connections": [{"uri": "http://192.168.1.235:32400"}],
+                    "accessToken": "test-only-server-token",
+                    "connections": [{"uri": "http://192.0.2.10:32400"}],
                 }
             ]
         if path == "/identity":
-            assert self.headers["X-Plex-Token"] == "server-secret"
+            assert self.headers["X-Plex-Token"] == "test-only-server-token"
             return {"MediaContainer": {"machineIdentifier": state["server_id"]}}
         if path == "/library/sections":
             return {"MediaContainer": {"Directory": []}}
@@ -49,7 +49,7 @@ def connect(system, **overrides):
         "/api/integrations/plex/connect",
         json={
             "server_id": "owned-server",
-            "uri": "http://192.168.1.235:32400",
+            "uri": "http://192.0.2.10:32400",
             "allow_private": True,
             **overrides,
         },
@@ -64,7 +64,7 @@ def test_connect_enrolls_only_verified_owner_and_never_returns_tokens(system, pl
     assert connect(system).status_code == 200
     row = system.db.one("SELECT * FROM integrations WHERE kind='plex'")
     assert row["health"] == "connected" and row["server_id"] == "owned-server"
-    assert system.app.state.integrations.vault.decrypt(row["secret"]) == "server-secret"
+    assert system.app.state.integrations.vault.decrypt(row["secret"]) == "test-only-server-token"
     assert system.db.one("SELECT plex_identity FROM administrator")["plex_identity"] == "123"
     assert system.db.settings()["dry_run"] is True
     assert system.db.one("SELECT COUNT(*) n FROM auth_pins")["n"] == 0
@@ -84,7 +84,7 @@ def test_connection_requires_local_admin_and_csrf_before_plex_request(system, pl
 
 def test_connect_rejects_unadvertised_address_and_wrong_server(system, plex_cloud):
     assert authorize(system).status_code == 200
-    assert connect(system, uri="http://192.168.1.99:32400").status_code == 409
+    assert connect(system, uri="http://192.0.2.99:32400").status_code == 409
     assert connect(system, allow_private=False).status_code == 409
     plex_cloud["server_id"] = "different-server"
     assert connect(system).status_code == 409

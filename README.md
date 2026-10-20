@@ -71,7 +71,7 @@ Read [integration contracts](docs/INTEGRATIONS.md), [execution and recovery](doc
 - Incremental sync uses a safe full-enumeration fallback; it does not claim an unreliable change feed.
 - A shared episode file cannot be deleted from a narrower single-episode plan. Use a matching season/show rule covering every represented episode.
 - Managed API deletion requires the manager recycling bin and empty-folder cleanup disabled. Record removal sends `deleteFiles=false` after exact file operations and requests an import exclusion. Missing verification enters reconciliation.
-- Seerr standard aggregate partial/deleted availability is supported. Mixed 4K availability and exact per-season status repair require reconciliation; the application never labels remaining content entirely deleted.
+- Seerr standard aggregate availability uses `partial` for remaining TV files and `unknown` when no indexed copies remain. The current Seerr status handler does not implement the advertised `deleted` action. Mixed 4K availability and exact per-season status repair require reconciliation.
 - Filesystem operations assume trusted media writers. Descriptor-relative checks reduce races but cannot make remote manager APIs or hostile concurrent filesystem writers transactional. Pause imports/renames during cleanup windows.
 - Logical bytes, allocated-block estimates and volume free-space changes are distinct. Free-space changes are observations, not proven attributable savings. Hardlinks, open handles, snapshots and concurrent writes affect recovery.
 

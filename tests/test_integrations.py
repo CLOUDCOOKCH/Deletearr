@@ -44,8 +44,8 @@ async def test_plex_account_request_identifies_installation(system):
     response = system.client.put(
         "/api/integrations/plex",
         json={
-            "url": "http://192.168.1.235:32400",
-            "secret": "private-plex-token",
+            "url": "http://192.0.2.10:32400",
+            "secret": "test-only-plex-token",
             "allow_private": True,
         },
     )
@@ -59,7 +59,7 @@ async def test_plex_account_request_identifies_installation(system):
         calls.append(request)
         assert request.headers["X-Plex-Client-Identifier"] == identifier
         assert request.headers["X-Plex-Product"] == "Deletarr"
-        assert request.headers["X-Plex-Token"] == "private-plex-token"
+        assert request.headers["X-Plex-Token"] == "test-only-plex-token"
         if request.url.path == "/identity":
             return httpx.Response(200, json={"MediaContainer": {"machineIdentifier": "server-1"}})
         return httpx.Response(200, json=[{"clientIdentifier": "server-1", "owned": True}])
@@ -72,13 +72,13 @@ async def test_plex_account_request_identifies_installation(system):
 async def test_plex_http_error_identifies_endpoint_without_secret():
     http = HTTP(
         "https://plex.tv",
-        {"X-Plex-Token": "private-token"},
-        transport=httpx.MockTransport(lambda _: httpx.Response(400, text="private-token")),
+        {"X-Plex-Token": "test-only-token"},
+        transport=httpx.MockTransport(lambda _: httpx.Response(400, text="test-only-token")),
         service="Plex account",
     )
     with pytest.raises(SafetyError, match=r"Plex account GET /api/v2/resources returned HTTP 400") as error:
         await http.request("GET", "/api/v2/resources")
-    assert "private-token" not in str(error.value)
+    assert "test-only-token" not in str(error.value)
 
 
 async def test_read_timeout_does_not_warn_about_mutations(monkeypatch):
@@ -90,13 +90,13 @@ async def test_read_timeout_does_not_warn_about_mutations(monkeypatch):
 
     def handle(request):
         calls.append(request)
-        raise httpx.ReadTimeout("private-token", request=request)
+        raise httpx.ReadTimeout("test-only-token", request=request)
 
     with pytest.raises(SafetyError, match="request timed out") as error:
         await client(handle).request("GET", "/identity")
     assert len(calls) == 3
     assert "mutation" not in str(error.value)
-    assert "private-token" not in str(error.value)
+    assert "test-only-token" not in str(error.value)
 
 
 async def test_radarr_unmonitor_verifies_postcondition():
@@ -136,6 +136,36 @@ async def test_seerr_partial_is_not_deleted():
 
     await Seerr(client(handle)).availability(10, True)
     assert calls[0].url.path == "/api/v1/media/10/partial"
+
+
+@pytest.mark.parametrize(
+    "remaining,complete,status,number",
+    [
+        (False, False, "unknown", 1),
+        (True, False, "partial", 4),
+        (True, True, "available", 5),
+    ],
+)
+async def test_seerr_status_updates_use_required_json_body(remaining, complete, status, number):
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        assert request.method == "POST"
+        assert request.headers["Content-Type"] == "application/json"
+        assert json.loads(request.content) == {"is4k": False}
+        assert request.url.path == f"/api/v1/media/10/{status}"
+        return httpx.Response(200, json={"id": 10, "status": number})
+
+    await Seerr(client(handle)).availability(10, remaining, complete)
+    assert len(calls) == 1
+
+
+async def test_seerr_unchanged_or_blocklisted_status_is_not_accepted_as_unavailable():
+    for status in [5, 6, 7]:
+        adapter = Seerr(client(lambda _: httpx.Response(200, json={"id": 10, "status": status})))
+        with pytest.raises(SafetyError, match="postcondition"):
+            await adapter.availability(10, False)
 
 
 async def test_no_redirects_or_response_body_leaks():

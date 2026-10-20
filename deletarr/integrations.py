@@ -310,9 +310,12 @@ class Seerr:
         raise SafetyError("Seerr media pagination limit exceeded")
 
     async def availability(self, media_id, remaining, complete=False):
-        status = "available" if complete else "partial" if remaining else "deleted"
-        result = await self.http.request("POST", f"/api/v1/media/{int(media_id)}/{status}")
-        if not result or result.get("status") != (5 if complete else 4 if remaining else 6):
+        # Seerr's specification advertises 'deleted', but its current status
+        # route has no handler for it. 'unknown' is the supported unavailable
+        # state; never call Seerr's /file DELETE to repair availability.
+        status = "available" if complete else "partial" if remaining else "unknown"
+        result = await self.http.request("POST", f"/api/v1/media/{int(media_id)}/{status}", json={"is4k": False})
+        if not result or result.get("status") != (5 if complete else 4 if remaining else 1):
             raise SafetyError("Seerr availability postcondition failed")
 
 

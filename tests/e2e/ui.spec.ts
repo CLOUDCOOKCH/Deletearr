@@ -149,7 +149,7 @@ test("Plex connection sign-in, server selection and responsive settings", async 
           {
             id: "browser-contract-server",
             name: "Test NAS",
-            connections: ["http://192.168.1.235:32400"],
+            connections: ["http://192.0.2.10:32400"],
           },
         ],
       },
@@ -202,7 +202,7 @@ test("Plex connection sign-in, server selection and responsive settings", async 
   await expect(page.getByText("Plex connected", { exact: true })).toBeVisible();
   expect(submitted).toEqual({
     server_id: "browser-contract-server",
-    uri: "http://192.168.1.235:32400",
+    uri: "http://192.0.2.10:32400",
     allow_private: true,
     enable_login: true,
   });

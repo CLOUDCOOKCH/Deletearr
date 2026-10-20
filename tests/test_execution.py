@@ -1,8 +1,56 @@
+import httpx
 import pytest
 from conftest import add_movie, add_rule, candidate, fake_integrations
 
 from deletarr.db import encode, now
+from deletarr.integrations import HTTP, Seerr
 from deletarr.security import SafetyError
+
+
+async def test_seerr_415_recovers_sync_without_repeating_physical_deletion(system, monkeypatch):
+    media_id, physical, item = add_movie(system)
+    row = candidate(system)
+    requests = []
+    failing = True
+
+    def handle(request):
+        if request.method == "GET":
+            assert request.url.path in {"/api/v1/request", "/api/v1/media"}
+            return httpx.Response(
+                200,
+                json={
+                    "results": []
+                    if request.url.path.endswith("request")
+                    else [
+                        {"id": 44, "mediaType": "movie", "tmdbId": 55, "status": 5},
+                    ]
+                },
+            )
+        requests.append(request)
+        assert request.method == "POST" and request.url.path == "/api/v1/media/44/unknown"
+        assert request.headers["Content-Type"] == "application/json"
+        return httpx.Response(415) if failing else httpx.Response(200, json={"id": 44, "status": 1})
+
+    adapter = Seerr(HTTP("https://seerr.test", {}, transport=httpx.MockTransport(handle)))
+    fake_integrations(system, {"1": item}, {"seerr": adapter})
+    system.db.execute("INSERT INTO external_ids VALUES(?,?,?)", (media_id, "tmdb", "55"))
+    system.db.execute("INSERT INTO requests VALUES(?,?,?,?,?,?,?)", ("seerr-ref", media_id, 44, None, 0, 5, "{}"))
+    live(system)
+    executor = system.app.state.executor
+    plan = executor.build(row["id"])
+    result = await executor.execute(plan["id"], plan["digest"], "seerr-415")
+    assert result["state"] == "ReconciliationRequired" and not physical.exists()
+    assert "HTTP 415" in result["error"]
+
+    def no_unlink(*args):
+        raise AssertionError("Physical deletion was repeated")
+
+    monkeypatch.setattr(executor.fs, "unlink", no_unlink)
+    failing = False
+    await executor.reconcile()
+    assert system.db.one("SELECT state FROM operations")["state"] == "Completed"
+    assert system.db.one("SELECT state FROM reconciliation")["state"] == "resolved"
+    assert len(requests) == 2
 
 
 def live(system):
