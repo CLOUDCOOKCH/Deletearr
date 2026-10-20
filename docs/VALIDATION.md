@@ -1,11 +1,11 @@
 # Validation and release status
 
-This checkout is an implemented release candidate, not a claim of completed live production certification. No real library was connected or deleted during development. Tests use disposable files, an isolated database and contract transports; browser screenshots use a test-only administrator and no fabricated media catalog.
+This checkout is an implemented release candidate, not a claim of completed live production certification. No real library was connected or deleted during development. Tests use disposable files, an isolated database and contract transports; browser screenshots use a test-only administrator. Library-action browser tests use intercepted, explicitly named fixture media; these fixtures never contact a live integration or delete real content.
 
 ## Local evidence
 
-- Backend behavioral suite: 114 tests passed, including shared-season deletion, file reimports requiring fresh approval, read-only mapping suggestions, current source metadata, and integration configuration changes.
-- Seven browser workflows: passed against the real FastAPI backend and built React application, covering authentication, rule creation/simulation, all main navigation pages, dry-run defaults, mobile menu, no horizontal overflow and console exceptions.
+- Backend behavioral suite: 138 tests passed, including shared-season deletion, file reimports requiring fresh approval, read-only mapping suggestions, current source metadata, and integration configuration changes.
+- Nine browser workflows: passed against the real FastAPI backend and built React application, covering authentication, rule creation/simulation, all main navigation pages, dry-run defaults, mobile menu, no horizontal overflow and console exceptions.
 - Production frontend build, Python Ruff checks and Prettier formatting: passed.
 - npm audit: zero known vulnerabilities after updating Vite/esbuild to patched releases.
 - pip-audit of `requirements.lock`: no known vulnerabilities found.
@@ -49,3 +49,7 @@ The October 20 review covered the Python modules, React views/helpers, deploymen
 - Reporting running-job cancellation as cancelled rather than completed.
 
 Green tests describe these reproducible cases, not proof that every possible defect or live-service incompatibility has been eliminated.
+
+## Library actions and versions
+
+Twenty-four backend cases cover manual intent without a retention match, no mutation in dry-run, retained-file protection, exact previewed sidecar removal, empty-parent cleanup, unrelated-file retention, folder/symlink changes, shared artwork, stable-ID grouping, multipart editions, TV episode coordinates, hardlinks, active playback, changed kept copies, mode changes, combined limits and schema-4 backup/migration. Browser workflows cover single/bulk preview, exact selections, Versions comparison, releasing protection, mobile layout and live count/byte confirmation. New captures under `test-results/library-*` are disposable fixture evidence, not actual library metrics.

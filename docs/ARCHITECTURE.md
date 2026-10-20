@@ -33,6 +33,7 @@ flowchart LR
 | `catalog.py` | Stable UUID catalog, external IDs, hierarchy, many-to-many physical files, watch events and requests |
 | `rules.py` | Typed bounded predicate trees, traces, scope/priority selection and global protections |
 | `filesystem.py` | Root authorization, mount validation, source mapping, identity checks and exact unlink |
+| `library.py` | Explicit library deletion intent, stable-ID edition grouping and retained-file protection |
 | `storage.py` | Volume-specific pressure recovery selection with hardlink-aware estimates |
 | `executor.py` | Plans, state transitions, final validation, monitoring preconditions, deletion and reconciliation |
 | `jobs.py` | Durable queue, cron/interval scheduler, cancellation, retries and notification delivery |
@@ -46,7 +47,7 @@ Rules retain versioned typed condition JSON and scope columns. Evaluations store
 
 Settings, administrator, sessions, login attempts, encrypted integrations, authorized roots/mappings, libraries, schedules/jobs, notification destinations/deliveries, audit events and storage snapshots complete the operational model. Logical entities are combined when a separate table would duplicate an invariant (for example show/season/episode in one constrained hierarchy, conditions as a validated tree).
 
-Migrations are additive versions 1–4 with transactional later steps. Startup refuses a newer schema. The application does not perform down-migrations. Back up before upgrading; recovery restores the matching database, credential key and runtime version while stopped. See OPERATIONS.md.
+Migrations are additive versions 1–5 with transactional later steps. Before migrating an existing database to version 5, startup creates a consistent mode-0600 SQLite backup under `/config`; this excludes the separate credential key. Version 5 expires older plans and adds manual selections and physical-version protections without changing deletion mode. Startup refuses a newer schema. The application does not perform down-migrations. Back up before upgrading; recovery restores the matching database, credential key and runtime version while stopped. See OPERATIONS.md.
 
 ## Retention semantics
 

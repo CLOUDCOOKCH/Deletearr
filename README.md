@@ -53,7 +53,9 @@ Permanent deletion is off on first installation. Enabling it requires the admini
 ## Features
 
 - Movies with multiple files; explicit show → season → episode → file relationships and shared physical-file protections.
-- Searchable, paginated library explorer with poster/table views, media details and bulk Keep Forever.
+- Searchable, paginated library explorer with poster/table views, media details, bulk Keep Forever and previewed manual deletion.
+- Library **Versions** tab compares Plex editions and copies by external IDs, with resolution, codecs and exact files; choose which copy to keep. TV comparisons are per episode.
+- Reviewed title-related subtitles/artwork/metadata are included in deletion plans; empty parent folders are cleaned up without recursive directory deletion.
 - Typed nested AND/OR/NOT rules, templates, priorities, library/type scopes, approval/grace/automatic actions and read-only rule simulation.
 - Storage-pressure recovery planning, explicit never-watched ordering, hardlink-aware reclaim estimates and global rolling deletion budgets.
 - Immutable, expiring plans; refreshed Plex playback and history checks; verified manager monitoring changes; exact-file operations and persisted checkpoints.

@@ -584,7 +584,7 @@ function App() {
           {page === "Dashboard" ? (
             <Dashboard {...props} />
           ) : page === "Libraries" ? (
-            <Libraries {...props} />
+            <LibraryPage {...props} />
           ) : page === "Rules" ? (
             <Rules {...props} />
           ) : page === "Cleanup Queue" ? (
@@ -980,6 +980,394 @@ function Metric({
     </div>
   );
 }
+function LibraryPage(props: Props) {
+  const [view, setView] = useState("browse");
+  return (
+    <>
+      <PageHeading
+        title="Your library"
+        description="Movies, shows, and the details that matter."
+      >
+        <Button onClick={() => runJob("full_sync")}>
+          <RefreshCw size={16} /> Sync library
+        </Button>
+      </PageHeading>
+      <nav className="library-views" aria-label="Library views">
+        <button
+          aria-pressed={view === "browse"}
+          onClick={() => setView("browse")}
+        >
+          Browse
+        </button>
+        <button
+          aria-pressed={view === "versions"}
+          onClick={() => setView("versions")}
+        >
+          Versions
+        </button>
+      </nav>
+      {view === "browse" ? (
+        <Libraries {...props} />
+      ) : (
+        <VersionsPanel {...props} />
+      )}
+    </>
+  );
+}
+
+function ManualDeletionReview({
+  review,
+  close,
+  refresh,
+}: {
+  review: Row;
+  close: () => void;
+  refresh: () => void;
+}) {
+  const [confirmation, setConfirmation] = useState(""),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const keptFiles = review.kept_files || [];
+  return (
+    <Modal title="Review library deletion" close={close}>
+      <div className="simulation-banner">
+        <ShieldCheck size={19} />
+        <span>
+          {review.dry_run
+            ? "Dry-run: this will simulate deletion. Your files stay in place."
+            : "Permanent deletion: approved files cannot be recovered through Deletarr."}
+        </span>
+      </div>
+      <p>
+        <b>
+          {review.item_count} media items · {review.file_count} files
+        </b>{" "}
+        · {bytes(review.logical_bytes)} logical ·{" "}
+        {bytes(review.estimated_reclaimable)} estimated reclaimable
+      </p>
+      {keptFiles.length > 0 && (
+        <section className="kept-version-summary">
+          <h3>Version to keep</h3>
+          <p className="muted">
+            These files will be protected when you confirm, including when you
+            simulate.
+          </p>
+          {keptFiles.map((file: Row) => (
+            <div className="file-row" key={file.id}>
+              <code>{file.path}</code>
+              <span>{bytes(file.size)} · Keep this version</span>
+            </div>
+          ))}
+        </section>
+      )}
+      {review.plans.map((plan: Row) => (
+        <section key={plan.id} className="manual-plan-section">
+          <h3>{plan.title}</h3>
+          <p className="muted">Exact media files</p>
+          {plan.files.map((file: Row) => (
+            <div className="file-row" key={file.id}>
+              <code>{file.path}</code>
+              <span>
+                {bytes(file.size)} · {file.manager || "Direct filesystem"}
+              </span>
+            </div>
+          ))}
+          {plan.sidecars?.length > 0 && (
+            <details open>
+              <summary>
+                Related subtitles, artwork & metadata ({plan.sidecars.length})
+              </summary>
+              {plan.sidecars.map((file: Row) => (
+                <div className="file-row" key={file.id}>
+                  <code>{file.path}</code>
+                  <span>
+                    {bytes(file.size)} · included in permanent deletion
+                  </span>
+                </div>
+              ))}
+            </details>
+          )}
+          <details>
+            <summary>Folder cleanup ({plan.directories?.length || 0})</summary>
+            <p className="muted">
+              After the approved files are removed, these folders are removed
+              only if empty. Authorized media roots, kept versions, and
+              unrelated files stay in place.
+            </p>
+            {plan.directories?.map((directory: Row) => (
+              <div className="file-row" key={directory.path}>
+                <code>{directory.path}</code>
+                <span>Remove if empty</span>
+              </div>
+            ))}
+          </details>
+        </section>
+      ))}
+      <p className="muted">
+        Playback, protection, mount identity, file identity and deletion limits
+        are checked again. Managed media is unmonitored before removal. Plans
+        expire after 15 minutes.
+      </p>
+      {!review.dry_run && (
+        <Field
+          label="Permanent deletion confirmation"
+          help={`Type ${review.confirmation}`}
+        >
+          <input
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            autoComplete="off"
+          />
+        </Field>
+      )}
+      <ErrorBox text={error} />
+      <div className="modal-actions">
+        <Button onClick={close} disabled={busy}>
+          Cancel
+        </Button>
+        <Button
+          kind={review.dry_run ? "primary" : "danger"}
+          disabled={
+            busy || (!review.dry_run && confirmation !== review.confirmation)
+          }
+          onClick={async () => {
+            setBusy(true);
+            setError("");
+            try {
+              await api("/library/deletion-plans/execute", "POST", {
+                plans: review.plans.map((plan: Row) => ({
+                  id: plan.id,
+                  digest: plan.digest,
+                })),
+                confirmation,
+                expected_dry_run: review.dry_run,
+              });
+              refresh();
+              close();
+              notify("Library cleanup queued. Follow its result in History.");
+            } catch (error) {
+              setError((error as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy
+            ? "Submitting…"
+            : review.dry_run
+              ? "Simulate deletion"
+              : "Permanently delete"}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function VersionsPanel({ revision, refresh }: Props) {
+  const [q, setQ] = useState(""),
+    [kind, setKind] = useState(""),
+    [page, setPage] = useState(1),
+    [review, setReview] = useState<Row | null>(null),
+    [busy, setBusy] = useState<string | null>(null),
+    [actionError, setActionError] = useState("");
+  const { data, error } = useData<Row>(
+    `/versions?q=${encodeURIComponent(q)}&kind=${kind}&page=${page}`,
+    revision,
+  );
+  return (
+    <>
+      <p className="muted versions-intro">
+        Compare copies of the same movie or episode. Keep one version, then
+        review removal of the others. Multi-part editions stay together.
+      </p>
+      <div className="toolbar">
+        <label className="search">
+          <Search size={17} />
+          <input
+            aria-label="Search versions"
+            placeholder="Find a movie or show…"
+            value={q}
+            onChange={(event) => {
+              setQ(event.target.value);
+              setPage(1);
+            }}
+          />
+        </label>
+        <select
+          aria-label="Version media type"
+          value={kind}
+          onChange={(event) => {
+            setKind(event.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Movies & television</option>
+          <option value="movie">Movies</option>
+          <option value="episode">Television episodes</option>
+        </select>
+        <Button onClick={refresh}>
+          <RefreshCw size={15} />
+          Refresh versions
+        </Button>
+      </div>
+      <ErrorBox text={error || actionError} />
+      {!data ? (
+        <Loading />
+      ) : !data.items.length ? (
+        <section className="panel">
+          <Empty icon={Film} title="No alternate versions found">
+            Synchronize Plex to find editions and copies. Separate catalog items
+            are grouped only when their external IDs match.
+          </Empty>
+        </section>
+      ) : (
+        <div className="version-groups">
+          {data.items.map((group: Row) => (
+            <section className="panel version-group" key={group.id}>
+              <div className="version-group-heading">
+                <CandidateArtwork poster={group.poster} title={group.title} />
+                <div>
+                  <h2>{group.title}</h2>
+                  <p>
+                    {group.versions.length} versions · {group.identity}
+                    {group.year ? ` · ${group.year}` : ""}
+                  </p>
+                  {group.ambiguous && (
+                    <Badge tone="red">Shared parts · inspect manually</Badge>
+                  )}
+                </div>
+              </div>
+              <div className="version-choices">
+                {group.versions.map((version: Row) => (
+                  <article className="version-choice" key={version.id}>
+                    <div className="version-facts">
+                      <h3>
+                        {version.resolution
+                          ? /^\d+$/.test(version.resolution)
+                            ? `${version.resolution}p`
+                            : version.resolution.toUpperCase()
+                          : "Resolution unavailable"}
+                        {version.edition ? ` · ${version.edition}` : ""}
+                      </h3>
+                      {version.protected && (
+                        <Badge tone="green">
+                          <ShieldCheck size={12} />
+                          Kept version
+                        </Badge>
+                      )}
+                      <p>
+                        {[
+                          version.video_codec?.toUpperCase(),
+                          version.audio_codec?.toUpperCase(),
+                          version.container?.toUpperCase(),
+                          bytes(version.logical_bytes),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                      <small>
+                        {version.libraries.join(" · ")} · {version.files.length}{" "}
+                        physical {version.files.length === 1 ? "file" : "files"}
+                      </small>
+                    </div>
+                    <div className="version-choice-actions">
+                      <Button
+                        disabled={busy !== null || group.ambiguous}
+                        onClick={async () => {
+                          setBusy(version.id);
+                          setActionError("");
+                          try {
+                            setReview(
+                              await api(`/versions/${group.id}/keep`, "POST", {
+                                version_id: version.id,
+                              }),
+                            );
+                          } catch (error) {
+                            setActionError((error as Error).message);
+                          } finally {
+                            setBusy(null);
+                          }
+                        }}
+                      >
+                        {busy === version.id
+                          ? "Preparing…"
+                          : "Keep this version"}
+                      </Button>
+                      {version.protected && (
+                        <Button
+                          kind="quiet"
+                          disabled={busy !== null}
+                          onClick={async () => {
+                            setBusy(version.id);
+                            setActionError("");
+                            try {
+                              await api("/library/version-protection", "PUT", {
+                                file_ids: version.files.map(
+                                  (file: Row) => file.id,
+                                ),
+                                protected: false,
+                              });
+                              refresh();
+                            } catch (error) {
+                              setActionError((error as Error).message);
+                            } finally {
+                              setBusy(null);
+                            }
+                          }}
+                        >
+                          Release version protection
+                        </Button>
+                      )}
+                    </div>
+                    <details className="version-files">
+                      <summary>Exact files</summary>
+                      {version.files.map((file: Row) => (
+                        <div className="file-row" key={file.id}>
+                          <code>{file.path || file.source_path}</code>
+                          <span>
+                            {bytes(file.size)} ·{" "}
+                            {file.identity && parse(file.identity).links > 1
+                              ? "Hardlinked · savings may be zero"
+                              : "Physical media file"}
+                          </span>
+                        </div>
+                      ))}
+                    </details>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+      {data && (
+        <div className="pagination">
+          <span>{data.total} titles with alternate versions</span>
+          <Button
+            disabled={page === 1}
+            onClick={() => setPage((value) => value - 1)}
+          >
+            Previous
+          </Button>
+          <Button
+            disabled={page * 30 >= data.total}
+            onClick={() => setPage((value) => value + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+      {review && (
+        <ManualDeletionReview
+          review={review}
+          close={() => setReview(null)}
+          refresh={refresh}
+        />
+      )}
+    </>
+  );
+}
+
 function Libraries({ revision, refresh, open }: Props) {
   const [q, setQ] = useState(""),
     [kind, setKind] = useState("movie"),
@@ -987,7 +1375,23 @@ function Libraries({ revision, refresh, open }: Props) {
     [view, setView] = useState("grid"),
     [page, setPage] = useState(1),
     [sort, setSort] = useState("title"),
-    [selected, setSelected] = useState<Set<string>>(new Set());
+    [selected, setSelected] = useState<Set<string>>(new Set()),
+    [review, setReview] = useState<Row | null>(null),
+    [deleting, setDeleting] = useState(false);
+  async function reviewDeletion(ids: string[]) {
+    setDeleting(true);
+    try {
+      setReview(
+        await api("/library/deletion-plans", "POST", {
+          items: ids.map((media_id) => ({ media_id })),
+        }),
+      );
+    } catch (error) {
+      notify((error as Error).message, true);
+    } finally {
+      setDeleting(false);
+    }
+  }
   const { data: d, error } = useData<Row>(
     `/media?q=${encodeURIComponent(q)}&kind=${kind}&library=${library}&page=${page}&sort=${sort}`,
     revision,
@@ -1005,15 +1409,6 @@ function Libraries({ revision, refresh, open }: Props) {
   }
   return (
     <>
-      <PageHeading
-        title="Your library"
-        description="Movies, shows, and the details that matter."
-      >
-        <Button onClick={() => runJob("full_sync")}>
-          <RefreshCw size={16} />
-          Sync library
-        </Button>
-      </PageHeading>
       <div className="toolbar">
         <label className="search">
           <Search size={18} />
@@ -1088,6 +1483,14 @@ function Libraries({ revision, refresh, open }: Props) {
             <ShieldCheck size={15} />
             Keep Forever
           </Button>
+          <Button
+            kind="danger"
+            disabled={deleting}
+            onClick={() => reviewDeletion([...selected])}
+          >
+            <Trash2 size={15} />
+            {deleting ? "Preparing…" : "Delete selected"}
+          </Button>
           <Button kind="quiet" onClick={() => setSelected(new Set())}>
             Clear selection
           </Button>
@@ -1156,6 +1559,14 @@ function Libraries({ revision, refresh, open }: Props) {
                 <span>{m.year || m.kind}</span>
                 <span>{bytes(m.size)}</span>
               </div>
+              <Button
+                kind="quiet danger-text"
+                disabled={deleting}
+                onClick={() => reviewDeletion([m.id])}
+              >
+                <Trash2 size={13} />
+                Delete
+              </Button>
               {m.cleanup_state && (
                 <small className="eligibility">{m.cleanup_state}</small>
               )}
@@ -1175,6 +1586,7 @@ function Libraries({ revision, refresh, open }: Props) {
                 <th>Last watched</th>
                 <th>Protection</th>
                 <th>Cleanup</th>
+                <th>Delete</th>
               </tr>
             </thead>
             <tbody>
@@ -1210,6 +1622,16 @@ function Libraries({ revision, refresh, open }: Props) {
                   <td>
                     <Badge>{m.cleanup_state || "Not evaluated"}</Badge>
                   </td>
+                  <td>
+                    <Button
+                      kind="quiet danger-text"
+                      disabled={deleting}
+                      onClick={() => reviewDeletion([m.id])}
+                    >
+                      <Trash2 size={14} />
+                      Delete
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1232,6 +1654,16 @@ function Libraries({ revision, refresh, open }: Props) {
             <ChevronRight size={14} />
           </Button>
         </div>
+      )}
+      {review && (
+        <ManualDeletionReview
+          review={review}
+          close={() => setReview(null)}
+          refresh={() => {
+            setSelected(new Set());
+            refresh();
+          }}
+        />
       )}
     </>
   );
@@ -1305,6 +1737,24 @@ function MediaDetail({
                   ? JSON.parse(f.identity).links + " hardlink(s)"
                   : "Mapping unverified"}
               </span>
+              {f.version_protected && (
+                <div>
+                  <Badge tone="green">Kept version</Badge>{" "}
+                  <Button
+                    kind="quiet"
+                    onClick={async () => {
+                      await act("/library/version-protection", "PUT", {
+                        file_ids: [f.id],
+                        protected: false,
+                      });
+                      setRevision((value) => value + 1);
+                      refresh();
+                    }}
+                  >
+                    Release version protection
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
           <h3>Watch history</h3>
@@ -2185,16 +2635,18 @@ function Queue({ revision, refresh, open }: Props) {
       {plan && (
         <Modal title="Exact deletion plan" close={() => setPlan(null)}>
           <p>
-            <b>{plan.title}</b> · {plan.files.length} physical files ·{" "}
+            <b>{plan.title}</b> ·{" "}
+            {plan.files.length + (plan.sidecars?.length || 0)} physical files ·{" "}
             {bytes(plan.logical_bytes)} logical ·{" "}
             {bytes(plan.estimated_reclaimable)} estimated reclaimable
           </p>
           <p className="muted">
-            Valid for 15 minutes. Rules, playback, request protection, file
-            identities and integrations are checked again immediately before
-            execution.
+            Related sidecars are included below. Empty planned parent folders
+            are removed; unrelated files are retained. Valid for 15 minutes.
+            Rules, playback, request protection, file identities and
+            integrations are checked again immediately before execution.
           </p>
-          {plan.files.map((f: Row) => (
+          {[...plan.files, ...(plan.sidecars || [])].map((f: Row) => (
             <div className="file-row" key={f.id}>
               <code>{f.path}</code>
               <span>
@@ -2203,6 +2655,15 @@ function Queue({ revision, refresh, open }: Props) {
               </span>
             </div>
           ))}
+          <details>
+            <summary>Folder cleanup ({plan.directories?.length || 0})</summary>
+            <p className="muted">These folders are removed only when empty.</p>
+            {(plan.directories || []).map((directory: Row) => (
+              <div className="file-row" key={directory.path}>
+                <code>{directory.path}</code>
+              </div>
+            ))}
+          </details>
           <details>
             <summary>Full plan & expected postconditions</summary>
             <pre>{JSON.stringify(plan, null, 2)}</pre>

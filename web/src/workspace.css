@@ -1367,3 +1367,149 @@ footer {
     font-size: 10px;
   }
 }
+
+.library-views {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--line);
+  margin: -5px 0 25px;
+}
+.library-views button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 10px 0 13px;
+  border-bottom: 2px solid transparent;
+}
+.library-views button[aria-pressed="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.version-groups {
+  display: grid;
+  gap: 24px;
+}
+.version-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.version-group-heading .candidate-art {
+  width: 56px;
+  height: 84px;
+}
+.version-group-heading h2 {
+  font-size: 18px;
+  margin: 0 0 6px;
+}
+.version-group-heading p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+.version-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 24px;
+  padding: 22px;
+}
+.version-choice + .version-choice {
+  border-top: 1px solid var(--line);
+}
+.version-facts {
+  min-width: 0;
+}
+.version-facts h3 {
+  font-size: 16px;
+  margin: 0 0 8px;
+  display: inline-block;
+}
+.version-facts .badge {
+  margin-left: 10px;
+}
+.version-facts p {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 5px;
+}
+.version-facts small {
+  font-size: 11px;
+}
+.version-choice-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-end;
+}
+.version-files {
+  grid-column: 1 / -1;
+  padding: 0;
+  font-size: 12px;
+}
+.version-files > summary {
+  color: var(--muted);
+}
+.versions-intro {
+  font-size: 13px;
+  margin: 0 0 22px;
+}
+.manual-plan-section {
+  border-top: 1px solid var(--line);
+  margin: 22px 0;
+  padding-top: 1px;
+}
+.manual-plan-section h3 {
+  font-size: 17px;
+  margin-top: 20px;
+}
+.manual-plan-section > p {
+  font-size: 12px;
+  margin: 0;
+}
+.kept-version-summary {
+  margin: 20px 0;
+}
+.kept-version-summary > h3 {
+  margin-top: 16px;
+}
+.poster-card > .button {
+  margin-top: 8px;
+  min-height: 32px;
+  font-size: 11px;
+  padding: 5px 0;
+}
+@media (max-width: 640px) {
+  .version-group-heading {
+    padding: 18px;
+    gap: 13px;
+  }
+  .version-group-heading h2 {
+    font-size: 16px;
+  }
+  .version-choice {
+    grid-template-columns: 1fr;
+    padding: 19px;
+    gap: 15px;
+  }
+  .version-choice-actions {
+    align-items: stretch;
+  }
+  .version-facts h3 {
+    font-size: 15px;
+  }
+  .version-facts .badge {
+    margin: 0 0 5px 8px;
+  }
+  .version-files {
+    grid-column: 1;
+  }
+  .selection-bar {
+    flex-wrap: wrap;
+  }
+  .selection-bar .button {
+    flex: 1;
+  }
+}

@@ -25,6 +25,7 @@ from .executor import Executor
 from .filesystem import Filesystem
 from .integrations import HTTP, Integrations, Plex
 from .jobs import KINDS, Notifications, Worker
+from .library import MANUAL_RULE_ID, LibraryActions
 from .rules import Engine, RuleInput
 from .security import PASSWORDS, SafetyError, Vault, authenticate, new_session, token_hash, validate_url
 
@@ -111,6 +112,36 @@ class ExecuteInput(Strict):
     confirmation: str
 
 
+class ManualSelection(Strict):
+    media_id: str
+    file_ids: list[str] | None = Field(default=None, min_length=1, max_length=10000)
+
+
+class ManualPreview(Strict):
+    items: list[ManualSelection] = Field(min_length=1, max_length=100)
+    keep_file_ids: list[str] = Field(default_factory=list, max_length=10000)
+
+
+class PlanReference(Strict):
+    id: str
+    digest: str = Field(min_length=64, max_length=64)
+
+
+class ManualSubmit(Strict):
+    plans: list[PlanReference] = Field(min_length=1, max_length=100)
+    confirmation: str = ""
+    expected_dry_run: bool
+
+
+class FileProtection(Strict):
+    file_ids: list[str] = Field(min_length=1, max_length=10000)
+    protected: bool
+
+
+class KeepVersion(Strict):
+    version_id: str = Field(min_length=64, max_length=64)
+
+
 class SettingsInput(Strict):
     version: int
     timezone: str = "UTC"
@@ -181,6 +212,7 @@ def create_app(directory=None, run_worker=True):
     notifications = Notifications(db, vault)
     executor = Executor(db, catalog, engine, integrations, filesystem, notifications)
     worker = Worker(db, catalog, engine, executor, integrations, filesystem, notifications)
+    library_actions = LibraryActions(db, catalog, executor, worker)
     setup_path = db.directory / "setup-token"
     if not db.one("SELECT id FROM administrator") and not setup_path.exists():
         fd = os.open(setup_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -518,14 +550,18 @@ def create_app(directory=None, run_worker=True):
             AND EXISTS(SELECT 1 FROM media_files mf JOIN media m ON m.id=mf.media_id
             WHERE mf.file_id=f.id AND m.missing=0)""")
         candidates = db.one(
-            "SELECT COUNT(*) n FROM candidates WHERE state NOT IN ('Completed','Rejected','Protected')"
+            "SELECT COUNT(*) n FROM candidates WHERE state NOT IN ('Completed','Rejected','Protected') AND rule_id<>?",
+            (MANUAL_RULE_ID,),
         )["n"]
         protected = db.one("SELECT COUNT(*) n FROM media WHERE protected=1")["n"]
-        savings = db.one("""WITH RECURSIVE scope(id) AS (
-            SELECT media_id FROM candidates WHERE state IN ('Ready','GracePeriod','PendingApproval')
+        savings = db.one(
+            """WITH RECURSIVE scope(id) AS (
+            SELECT media_id FROM candidates WHERE state IN ('Ready','GracePeriod','PendingApproval') AND rule_id<>?
             UNION SELECT m.id FROM media m JOIN scope ON m.parent_id=scope.id)
             SELECT COALESCE(SUM(size),0) bytes FROM files WHERE deleted=0 AND id IN
-            (SELECT mf.file_id FROM media_files mf JOIN scope ON mf.media_id=scope.id)""")["bytes"]
+            (SELECT mf.file_id FROM media_files mf JOIN scope ON mf.media_id=scope.id)""",
+            (MANUAL_RULE_ID,),
+        )["bytes"]
         return {
             "counts": counts,
             "logical_bytes": files["bytes"],
@@ -607,9 +643,11 @@ def create_app(directory=None, run_worker=True):
         item = db.one("SELECT * FROM media WHERE id=?", (media_id,))
         if not item:
             raise HTTPException(404, "Media not found")
+        files = catalog.files(media_id)
+        protected_files = {row["file_id"] for row in db.all("SELECT file_id FROM file_protections")}
         return {
             **item,
-            "files": catalog.files(media_id),
+            "files": [{**file, "version_protected": file["id"] in protected_files} for file in files],
             "descendants": catalog.descendants(media_id),
             "watch_events": db.all(
                 "SELECT * FROM watch_events WHERE media_id=? ORDER BY watched_at DESC LIMIT 200", (media_id,)
@@ -621,6 +659,42 @@ def create_app(directory=None, run_worker=True):
             ),
             "candidates": db.all("SELECT * FROM candidates WHERE media_id=?", (media_id,)),
         }
+
+    @app.post("/api/library/deletion-plans")
+    def preview_library_deletion(data: ManualPreview):
+        return library_actions.preview([item.model_dump() for item in data.items], data.keep_file_ids)
+
+    @app.post("/api/library/deletion-plans/execute")
+    def execute_library_deletion(data: ManualSubmit):
+        return library_actions.submit(
+            [plan.model_dump() for plan in data.plans], data.confirmation, data.expected_dry_run
+        )
+
+    @app.get("/api/versions")
+    def versions(
+        q: str = Query("", max_length=200),
+        kind: Literal["", "movie", "episode"] = "",
+        page: int = Query(1, ge=1),
+        limit: int = Query(30, ge=1, le=100),
+    ):
+        return library_actions.versions(q, kind, page, limit)
+
+    @app.post("/api/versions/{group_id}/keep")
+    def keep_version(group_id: str, data: KeepVersion):
+        return library_actions.keep_preview(group_id, data.version_id)
+
+    @app.put("/api/library/version-protection")
+    def protect_version(data: FileProtection):
+        with db.transaction() as c:
+            for file_id in set(data.file_ids):
+                if c.execute("SELECT id FROM files WHERE id=? AND deleted=0", (file_id,)).fetchone() is None:
+                    raise SafetyError("Version changed; reload before changing protection")
+                if data.protected:
+                    c.execute("INSERT OR IGNORE INTO file_protections VALUES(?,?)", (file_id, now()))
+                else:
+                    c.execute("DELETE FROM file_protections WHERE file_id=?", (file_id,))
+        db.audit("version.protection_changed", detail={"file_ids": data.file_ids, "protected": data.protected})
+        return {"ok": True}
 
     @app.get("/api/media/{media_id}/poster")
     async def poster(media_id: str):
@@ -641,9 +715,11 @@ def create_app(directory=None, run_worker=True):
 
     @app.get("/api/rules")
     def rules():
-        return db.all("SELECT * FROM rules ORDER BY priority,id")
+        return db.all("SELECT * FROM rules WHERE id<>? ORDER BY priority,id", (MANUAL_RULE_ID,))
 
     def save_rule(rule_id, data, creating=False):
+        if rule_id == MANUAL_RULE_ID:
+            raise SafetyError("Manual library requests are not retention rules")
         values = data.model_dump()
         conditions = encode(values.pop("conditions"))
         version = values.pop("version")
@@ -730,8 +806,8 @@ def create_app(directory=None, run_worker=True):
         page: int = Query(1, ge=1),
         limit: int = Query(50, ge=1, le=100),
     ):
-        where = "WHERE m.title LIKE ?" + (" AND c.state=?" if state else "")
-        args = ["%" + q + "%"] + ([state] if state else [])
+        where = "WHERE m.title LIKE ? AND c.rule_id<>?" + (" AND c.state=?" if state else "")
+        args = ["%" + q + "%", MANUAL_RULE_ID] + ([state] if state else [])
         rows = db.all(
             """SELECT c.*,m.title,m.kind,l.title library,r.name rule_name FROM candidates c JOIN media m ON m.id=c.media_id
             JOIN rules r ON r.id=c.rule_id JOIN libraries l ON l.id=m.library_id """

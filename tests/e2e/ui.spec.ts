@@ -548,3 +548,278 @@ test("dashboard polling clears a recovered request error", async ({ page }) => {
   ).toBeVisible({ timeout: 12000 });
   await expect(page.getByText("Temporary dashboard outage")).toHaveCount(0);
 });
+
+function libraryReviewFixture(dryRun = true) {
+  return {
+    dry_run: dryRun,
+    item_count: 1,
+    file_count: 2,
+    logical_bytes: 8198,
+    estimated_reclaimable: 12288,
+    confirmation: "DELETE 1 ITEMS 8198 BYTES",
+    kept_files: [],
+    plans: [
+      {
+        id: "manual-plan",
+        digest: "a".repeat(64),
+        title: "Browser fixture movie",
+        files: [
+          {
+            id: "old-file",
+            path: "/media/movies/Fixture/movie-1080.mkv",
+            size: 8192,
+          },
+        ],
+        sidecars: [
+          {
+            id: "sidecar",
+            path: "/media/movies/Fixture/movie-1080.en.srt",
+            size: 6,
+          },
+        ],
+        directories: [{ path: "/media/movies/Fixture" }],
+      },
+    ],
+  };
+}
+
+test("library deletion preview and Versions tab preserve exact selections", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await signIn(page);
+  await page.route("**/api/media?*", (route) =>
+    route.fulfill({
+      json: {
+        total: 1,
+        items: [
+          {
+            id: "movie",
+            title: "Browser fixture movie",
+            kind: "movie",
+            year: 2024,
+            size: 8192,
+            protected: 0,
+            watch_count: 1,
+          },
+        ],
+      },
+    }),
+  );
+  let released = false;
+  await page.route("**/api/versions?*", (route) =>
+    route.fulfill({
+      json: {
+        total: 1,
+        items: [
+          {
+            id: "group",
+            title: "Browser fixture movie",
+            kind: "movie",
+            identity: "tmdb:123",
+            versions: [
+              {
+                id: "old",
+                resolution: "1080",
+                video_codec: "h264",
+                audio_codec: "aac",
+                logical_bytes: 8192,
+                libraries: ["Fixture library"],
+                files: [
+                  {
+                    id: "old-file",
+                    path: "/media/movies/Fixture/movie-1080.mkv",
+                    size: 8192,
+                  },
+                ],
+                protected: false,
+              },
+              {
+                id: "kept",
+                resolution: "4k",
+                video_codec: "hevc",
+                audio_codec: "aac",
+                logical_bytes: 16384,
+                libraries: ["Fixture library"],
+                files: [
+                  {
+                    id: "keep-file",
+                    path: "/media/movies/Fixture/movie-2160.mkv",
+                    size: 16384,
+                  },
+                ],
+                protected: !released,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/library/deletion-plans", (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      items: [{ media_id: "movie" }],
+    });
+    return route.fulfill({ json: libraryReviewFixture() });
+  });
+  let submitted = 0;
+  await page.route("**/api/library/deletion-plans/execute", (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      plans: [{ id: "manual-plan", digest: "a".repeat(64) }],
+      confirmation: "",
+      expected_dry_run: true,
+    });
+    submitted++;
+    return route.fulfill({ json: { job_id: "fixture-job" } });
+  });
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("button", { name: "Libraries", exact: true })
+    .click();
+  await page
+    .getByRole("checkbox", { name: "Select Browser fixture movie" })
+    .check();
+  await page
+    .getByRole("button", { name: "Delete selected", exact: true })
+    .click();
+  let dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByRole("heading", { name: "Review library deletion" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("/media/movies/Fixture/movie-1080.en.srt", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await dialog.getByText("Folder cleanup (1)", { exact: true }).click();
+  await expect(
+    dialog.getByText("/media/movies/Fixture", { exact: true }),
+  ).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Simulate deletion", exact: true })
+    .click();
+  await expect.poll(() => submitted).toBe(1);
+  await page
+    .getByRole("navigation", { name: "Library views" })
+    .getByRole("button", { name: "Versions", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "4K", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Kept version", { exact: true })).toBeVisible();
+  const toast = page.getByRole("button", { name: "Dismiss notification" });
+  if (await toast.count()) await toast.click();
+  await page.screenshot({
+    path: "test-results/library-versions-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      page
+        .locator(".sidebar")
+        .evaluate((node) => node.getBoundingClientRect().right),
+    )
+    .toBeLessThanOrEqual(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBeTruthy();
+  await page.screenshot({
+    path: "test-results/library-versions-mobile.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.route("**/api/versions/group/keep", (route) => {
+    expect(route.request().postDataJSON()).toEqual({ version_id: "kept" });
+    return route.fulfill({
+      json: {
+        ...libraryReviewFixture(),
+        kept_files: [
+          {
+            id: "keep-file",
+            path: "/media/movies/Fixture/movie-2160.mkv",
+            size: 16384,
+          },
+        ],
+      },
+    });
+  });
+  await page
+    .locator(".version-choice")
+    .filter({ has: page.getByRole("heading", { name: "4K", exact: true }) })
+    .getByRole("button", { name: "Keep this version", exact: true })
+    .click();
+  dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByText("/media/movies/Fixture/movie-2160.mkv", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/library-deletion-review-mobile.png",
+    animations: "disabled",
+  });
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.route("**/api/library/version-protection", (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      file_ids: ["keep-file"],
+      protected: false,
+    });
+    released = true;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page
+    .getByRole("button", { name: "Release version protection", exact: true })
+    .click();
+  await expect(page.getByText("Kept version", { exact: true })).toHaveCount(0);
+});
+
+test("live library deletion requires its reviewed count and byte confirmation", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.route("**/api/media?*", (route) =>
+    route.fulfill({
+      json: {
+        total: 1,
+        items: [
+          {
+            id: "movie",
+            title: "Live fixture movie",
+            kind: "movie",
+            size: 8192,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/library/deletion-plans", (route) =>
+    route.fulfill({ json: libraryReviewFixture(false) }),
+  );
+  let submitted = false;
+  await page.route("**/api/library/deletion-plans/execute", (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      plans: [{ id: "manual-plan", digest: "a".repeat(64) }],
+      confirmation: "DELETE 1 ITEMS 8198 BYTES",
+      expected_dry_run: false,
+    });
+    submitted = true;
+    return route.fulfill({ json: { job_id: "live-fixture-job" } });
+  });
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("button", { name: "Libraries", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByRole("button", { name: "Permanently delete", exact: true }),
+  ).toBeDisabled();
+  await dialog
+    .getByLabel("Permanent deletion confirmation", { exact: true })
+    .fill("DELETE 1 ITEMS 8198 BYTES");
+  await dialog
+    .getByRole("button", { name: "Permanently delete", exact: true })
+    .click();
+  await expect.poll(() => submitted).toBeTruthy();
+});

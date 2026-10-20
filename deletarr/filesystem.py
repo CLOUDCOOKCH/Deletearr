@@ -1,6 +1,8 @@
 """Linux descriptor-relative exact-file access. Never walks a symlink or removes a tree."""
 
 import contextlib
+import errno
+import hashlib
 import json
 import os
 import secrets
@@ -220,3 +222,243 @@ class Filesystem:
                 result = {**row, "healthy": False, "error": "Mount identity or access validation failed"}
             results.append(result)
         return results
+
+    def plan_directories(self, files):
+        """Enumerate bounded parent directories, excluding every authorized root."""
+        planned = {}
+        for file in files:
+            root = self.root(file["root_id"])
+            base = Path(root["path"])
+            target = Path(file["path"])
+            if not target.is_relative_to(base) or ".." in target.parts:
+                raise SafetyError("Directory cleanup is outside the authorized root")
+            relative = target.relative_to(base)
+            if len(relative.parts) > 64:
+                raise SafetyError("Media path exceeds the directory cleanup depth limit")
+            for parent in target.parents:
+                if parent == base:
+                    break
+                with self.directory(parent) as fd:
+                    info = os.fstat(fd)
+                    if info.st_dev != root["device"]:
+                        raise SafetyError("Directory cleanup cannot cross a filesystem boundary")
+                    planned[(root["id"], str(parent))] = {
+                        "root_id": root["id"],
+                        "path": str(parent),
+                        "device": info.st_dev,
+                        "inode": info.st_ino,
+                    }
+                if len(planned) > 4096:
+                    raise SafetyError("Directory cleanup exceeds its bounded scope")
+        return sorted(planned.values(), key=lambda directory: (-len(Path(directory["path"]).parts), directory["path"]))
+
+    def remove_empty_directory(self, directory):
+        """Descriptor-relative rmdir only: neighboring files are never enumerated for deletion."""
+        self.root(directory["root_id"])
+        try:
+            with self.parent(directory["root_id"], directory["path"]) as (parent_fd, name):
+                info = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                if not stat.S_ISDIR(info.st_mode) or (info.st_dev, info.st_ino) != (
+                    directory["device"],
+                    directory["inode"],
+                ):
+                    raise SafetyError("Planned directory identity changed; cleanup refused")
+                fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+                try:
+                    held = os.fstat(fd)
+                    if (held.st_dev, held.st_ino) != (directory["device"], directory["inode"]):
+                        raise SafetyError("Directory changed immediately before cleanup")
+                    if os.listdir(fd):
+                        return "retained_not_empty"
+                    checked = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                    if (checked.st_dev, checked.st_ino) != (held.st_dev, held.st_ino):
+                        raise SafetyError("Directory changed immediately before cleanup")
+                    try:
+                        os.rmdir(name, dir_fd=parent_fd)
+                    except OSError as exc:
+                        if exc.errno in {errno.ENOTEMPTY, errno.EEXIST}:
+                            return "retained_not_empty"
+                        raise
+                    os.fsync(parent_fd)
+                    return "removed"
+                finally:
+                    os.close(fd)
+        except FileNotFoundError:
+            self.root(directory["root_id"])
+            return "already_absent"
+
+    def plan_sidecars(self, files, directories):
+        """Recognize exact adjacent sidecars; never sweep arbitrary folder contents."""
+        video = {
+            ".mkv",
+            ".mp4",
+            ".avi",
+            ".mov",
+            ".m4v",
+            ".wmv",
+            ".ts",
+            ".m2ts",
+            ".mpg",
+            ".mpeg",
+            ".webm",
+            ".strm",
+            ".iso",
+        }
+        sidecar = {
+            ".srt",
+            ".ass",
+            ".ssa",
+            ".sub",
+            ".idx",
+            ".vtt",
+            ".smi",
+            ".nfo",
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+            ".bif",
+        }
+        generic = {
+            "movie.nfo",
+            "tvshow.nfo",
+            "season.nfo",
+            "poster.jpg",
+            "poster.png",
+            "fanart.jpg",
+            "fanart.png",
+            "folder.jpg",
+            "folder.png",
+            "banner.jpg",
+            "landscape.jpg",
+            "clearlogo.png",
+            "clearart.png",
+            "disc.png",
+            "thumb.jpg",
+        }
+        targets = {f["path"] for f in files}
+        entries = {}
+        total = 0
+        for directory in directories:
+            with self.directory(directory["path"]) as fd:
+                names = sorted(os.listdir(fd))
+                total += len(names)
+                if total > 100_000 or len(names) > 10_000:
+                    raise SafetyError("Folder preview exceeds its bounded enumeration limit")
+                entries[directory["path"]] = [(name, os.stat(name, dir_fd=fd, follow_symlinks=False)) for name in names]
+        closed = {}
+        for directory in directories:  # deepest first
+            path = directory["path"]
+            closed[path] = all(
+                closed.get(str(Path(path) / name), False)
+                if stat.S_ISDIR(info.st_mode)
+                else str(Path(path) / name) in targets
+                if Path(name).suffix.lower() in video
+                else not stat.S_ISLNK(info.st_mode)
+                for name, info in entries[path]
+            )
+        result = []
+        for directory in directories:
+            path = directory["path"]
+            media_stems = [
+                (Path(name).stem.casefold(), str(Path(path) / name) in targets)
+                for name, info in entries[path]
+                if stat.S_ISREG(info.st_mode) and Path(name).suffix.lower() in video
+            ]
+            for name, info in entries[path]:
+                candidate = str(Path(path) / name)
+                if candidate in targets or not stat.S_ISREG(info.st_mode) or Path(name).suffix.lower() not in sidecar:
+                    continue
+                stem = Path(name).stem.casefold()
+                matches = [
+                    (prefix, selected)
+                    for prefix, selected in media_stems
+                    if stem == prefix or stem.startswith(prefix + ".") or stem.startswith(prefix + "-")
+                ]
+                longest = max((len(prefix) for prefix, _ in matches), default=0)
+                matching_target = bool(matches) and all(
+                    selected for prefix, selected in matches if len(prefix) == longest
+                )
+                if not matching_target and not (closed[path] and name.casefold() in generic):
+                    continue
+                identity = self.inspect(directory["root_id"], candidate)
+                ident = (
+                    "sidecar:"
+                    + hashlib.sha256(
+                        (directory["root_id"] + candidate + json.dumps(identity, sort_keys=True)).encode()
+                    ).hexdigest()
+                )
+                result.append(
+                    {
+                        "id": ident,
+                        "root_id": directory["root_id"],
+                        "path": candidate,
+                        "size": identity["size"],
+                        "identity": json.dumps(identity, sort_keys=True, separators=(",", ":")),
+                    }
+                )
+        return sorted(result, key=lambda file: (file["root_id"], file["path"]))
+
+    def validate_sidecar_ownership(self, sidecar, snapshot):
+        """A newly downloaded version must not lose artwork/subtitles shared with it."""
+        media_extensions = {
+            ".mkv",
+            ".mp4",
+            ".avi",
+            ".mov",
+            ".m4v",
+            ".wmv",
+            ".ts",
+            ".m2ts",
+            ".mpg",
+            ".mpeg",
+            ".webm",
+            ".strm",
+            ".iso",
+        }
+        generic = Path(sidecar["path"]).name.casefold() in {
+            "movie.nfo",
+            "tvshow.nfo",
+            "season.nfo",
+            "poster.jpg",
+            "poster.png",
+            "fanart.jpg",
+            "fanart.png",
+            "folder.jpg",
+            "folder.png",
+            "banner.jpg",
+            "landscape.jpg",
+            "clearlogo.png",
+            "clearart.png",
+            "disc.png",
+            "thumb.jpg",
+        }
+        parent = Path(sidecar["path"]).parent
+        known = {file["path"] for file in snapshot["files"]}
+        directories = {directory["path"] for directory in snapshot.get("directories", [])}
+        checked = 0
+        for directory in snapshot.get("directories", []):
+            path = Path(directory["path"])
+            if path != parent and not (generic and path.is_relative_to(parent)):
+                continue
+            with self.directory(path) as fd:
+                names = os.listdir(fd)
+                checked += len(names)
+                if checked > 100_000:
+                    raise SafetyError("Sidecar ownership validation exceeds its bounded scope")
+                for name in names:
+                    full = str(path / name)
+                    info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                    if generic and (
+                        stat.S_ISLNK(info.st_mode) or stat.S_ISDIR(info.st_mode) and full not in directories
+                    ):
+                        raise SafetyError("Folder gained unplanned content; sidecar cleanup refused")
+                    if (
+                        stat.S_ISREG(info.st_mode)
+                        and Path(name).suffix.lower() in media_extensions
+                        and full not in known
+                    ):
+                        stem = Path(name).stem.casefold()
+                        title = Path(sidecar["path"]).stem.casefold()
+                        if generic or title == stem or title.startswith(stem + ".") or title.startswith(stem + "-"):
+                            raise SafetyError("Sidecar is shared with a remaining or newly downloaded version")

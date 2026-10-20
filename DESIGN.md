@@ -151,3 +151,7 @@ Grouped settings navigation uses labelled navigation and groups; the selected se
 ## Decluttering
 
 The shared shell keeps the current route and deletion mode, without duplicate header shortcuts, workspace labels, or slogans. Notifications and settings remain in main navigation; source and license links remain in a quiet footer. Optional anime geometry appears in theme previews rather than behind operational content. The dashboard uses one emphasized action according to candidate availability, omits zero-value cleanup estimates, and keeps secondary connections/activity closed until requested. Live deletion warnings, last-watched evidence, exact scope, approvals, and protected confirmations remain visible at the relevant decision points.
+
+## Library actions and versions
+
+Libraries uses a quiet Browse/Versions button navigation beneath the existing heading. Destructive title actions stay visually secondary until the exact-file review dialog. Versions use a compact identity/poster header and paired edition panels with resolution, codecs, size, physical paths and a distinct kept-version state. Panels stack on mobile. The shared review separates retained files from media/sidecars selected for removal; folder paths are a native disclosure. Dry-run/live context and exact confirmation stay adjacent to submission. Existing themes, type, color tokens and focus styles are reused.

@@ -259,9 +259,34 @@ class Worker:
                         raise SafetyError("Pressure cleanup requires reconciliation; remaining work stopped")
         elif kind == "cleanup":
             payload = json.loads(job["payload"])
-            if payload.get("plan_id"):
+            if payload.get("manual_plans"):
+                snapshots = []
+                for reference in payload["manual_plans"]:
+                    plan = self.db.one("SELECT * FROM plans WHERE id=?", (reference["id"],))
+                    if not plan or plan["digest"] != reference["digest"]:
+                        raise SafetyError("Manual deletion plan changed")
+                    snapshots.append(json.loads(plan["snapshot"]))
+                self.executor.limits(snapshots)
+                for reference in payload["manual_plans"]:
+                    if (
+                        self.stop.is_set()
+                        or self.db.one("SELECT cancel_requested FROM jobs WHERE id=?", (job["id"],))["cancel_requested"]
+                    ):
+                        break
+                    self.executor.authorize_manual(reference["id"], reference["digest"])
+                    result = await self.executor.execute(
+                        reference["id"],
+                        reference["digest"],
+                        job["id"] + ":" + reference["id"],
+                        job_id=job["id"],
+                        expected_dry_run=expected_mode,
+                    )
+                    if result["state"] != "Completed":
+                        raise SafetyError("Manual cleanup requires reconciliation; remaining work stopped")
+            elif payload.get("plan_id"):
                 if payload.get("expected_dry_run") != self.db.settings()["dry_run"]:
                     raise SafetyError("Deletion mode changed after submission; review and submit again")
+                self.executor.authorize_manual(payload["plan_id"], payload["digest"])
                 result = await self.executor.execute(
                     payload["plan_id"], payload["digest"], job["id"], job_id=job["id"], expected_dry_run=expected_mode
                 )
@@ -270,7 +295,8 @@ class Worker:
             else:
                 plans = []
                 for candidate in self.db.all(
-                    "SELECT * FROM candidates WHERE state='Ready' OR (state='GracePeriod' AND due_at<=?)", (now(),)
+                    "SELECT * FROM candidates WHERE (state='Ready' OR (state='GracePeriod' AND due_at<=?)) AND id NOT IN (SELECT candidate_id FROM manual_requests)",
+                    (now(),),
                 ):
                     if self.stop.is_set():
                         break

@@ -92,7 +92,7 @@ class Executor:
             )
         ]
         unique_items = {n["id"] for p in snapshots for n in p["affected"] if n["kind"] in {"movie", "episode"}}
-        files = {f["id"]: f for p in snapshots for f in p["files"]}
+        files = {f["id"]: f for p in snapshots for f in [*p["files"], *p.get("sidecars", [])]}
         if len(unique_items) > settings["max_items"] or len(files) > settings["max_files"]:
             raise SafetyError("Global item or physical file limit exceeded")
         logical = sum(f["size"] for f in files.values())
@@ -127,13 +127,38 @@ class Executor:
             if total and targeted / total * 100 > settings["max_library_percent"]:
                 raise SafetyError("Maximum library percentage exceeded; review deletion safety settings")
 
+    def selection(self, candidate, item, rule):
+        request = self.db.one("SELECT * FROM manual_requests WHERE candidate_id=?", (candidate["id"],))
+        files = self.catalog.files(item["id"])
+        if request:
+            selected = set(json.loads(request["file_ids"]))
+            files = [file for file in files if file["id"] in selected]
+            if {file["id"] for file in files} != selected:
+                raise SafetyError("Manually selected file scope changed; preview again")
+            reasons = self.engine.protection(item, rule, now(), files=files)
+            result = {
+                "applicable": True,
+                "matched": True,
+                "eligible": not reasons,
+                "protections": reasons,
+                "conditions": {"source": "explicit_administrator_selection"},
+                "media_id": item["id"],
+                "title": item["title"],
+                "rule_id": rule["id"],
+                "rule_version": rule["version"],
+            }
+        else:
+            result = self.engine.evaluate(item, rule)
+        return result, files, request
+
     def build(self, candidate_id):
         candidate, item, rule = self.candidate(candidate_id)
-        result = self.engine.evaluate(item, rule)
+        result, files, manual = self.selection(candidate, item, rule)
         if not result["eligible"]:
             raise SafetyError("Candidate no longer eligible: " + "; ".join(result["protections"]))
         affected = self.catalog.descendants(item["id"])
-        files = self.catalog.files(item["id"])
+        directories = self.fs.plan_directories(files)
+        sidecars = self.fs.plan_sidecars(files, directories)
         target_ids = {n["id"] for n in affected}
         for file in files:
             owners = self.db.all("SELECT media_id FROM media_files WHERE file_id=?", (file["id"],))
@@ -153,14 +178,26 @@ class Executor:
             "rule_id": rule["id"],
             "rule_version": rule["version"],
             "strategy": rule["strategy"],
+            "manual": bool(manual),
+            "candidate_version": candidate["version"] if manual else None,
+            "keep_file_ids": json.loads(manual["keep_file_ids"]) if manual else [],
+            "kept_files": [
+                self.db.one("SELECT * FROM files WHERE id=? AND deleted=0", (file_id,))
+                for file_id in json.loads(manual["keep_file_ids"])
+            ]
+            if manual
+            else [],
             "integration_fingerprint": self.integration_fingerprint(),
             "affected": [{"id": n["id"], "plex_key": n["plex_key"], "kind": n["kind"]} for n in affected],
             "files": files,
-            "logical_bytes": sum(f["size"] for f in files),
-            "estimated_reclaimable": sum(json.loads(f["identity"])["reclaimable"] for f in files),
+            "sidecars": sidecars,
+            "directories": directories,
+            "logical_bytes": sum(f["size"] for f in [*files, *sidecars]),
+            "estimated_reclaimable": sum(json.loads(f["identity"])["reclaimable"] for f in [*files, *sidecars]),
             "checks": result,
             "postconditions": [
                 "Exact media files absent",
+                "Previewed title-related sidecars absent; empty planned parent directories removed",
                 "Manager unmonitored or record removed",
                 "Seerr availability reconciled when configured",
             ],
@@ -230,11 +267,12 @@ class Executor:
                 raise SafetyError("Active Plex playback protects this file")
             if not session.get("ratingKey") and not session_paths:
                 raise SafetyError("An active stream could not be identified safely")
-        result = self.engine.evaluate(item, rule)
+        result, current_files, manual = self.selection(candidate, item, rule)
         if not result["eligible"]:
             raise SafetyError("Final protection/retention validation failed: " + "; ".join(result["protections"]))
-        current_files = self.catalog.files(item["id"])
-        for higher in self.db.all("SELECT * FROM rules WHERE enabled=1 ORDER BY priority,library_id IS NULL,id"):
+        for higher in (
+            [] if manual else self.db.all("SELECT * FROM rules WHERE enabled=1 ORDER BY priority,library_id IS NULL,id")
+        ):
             if self.engine.evaluate(item, higher)["eligible"]:
                 if higher["id"] != rule["id"]:
                     raise SafetyError("A different rule now owns this candidate; reevaluate and approve again")
@@ -244,8 +282,70 @@ class Executor:
         for file in current_files:
             if self.fs.inspect(file["root_id"], file["path"]) != json.loads(file["identity"]):
                 raise SafetyError("File identity changed since planning")
+        if encode(self.fs.plan_directories(current_files)) != encode(snapshot.get("directories", [])):
+            raise SafetyError("Parent directory identities changed since planning")
+        if encode(self.fs.plan_sidecars(current_files, snapshot.get("directories", []))) != encode(
+            snapshot.get("sidecars", [])
+        ):
+            raise SafetyError("Associated sidecar scope changed since planning; preview again")
+        self.refresh_kept_hardlinks(snapshot)
         self.limits([snapshot])
         return snapshot
+
+    def authorize_manual(self, plan_id, digest):
+        plan = self.db.one("SELECT * FROM plans WHERE id=?", (plan_id,))
+        if not plan or plan["digest"] != digest or plan["expires"] < now() or plan["executed"]:
+            raise SafetyError("Manual plan expired or was consumed; preview again")
+        snapshot = json.loads(plan["snapshot"])
+        if not snapshot.get("manual"):
+            return
+        candidate, _, _ = self.candidate(plan["candidate_id"])
+        if candidate["state"] != "PendingApproval" or candidate["version"] != snapshot["candidate_version"]:
+            raise SafetyError("Manual selection changed; preview again")
+        self.transition(candidate["id"], "Ready", {"manual_plan": plan_id}, expected_version=candidate["version"])
+
+    def cleanup_directories(self, operation, snapshot):
+        results = []
+        for directory in snapshot.get("directories", []):
+            key = "directory:" + hashlib.sha256((directory["root_id"] + directory["path"]).encode()).hexdigest()
+            self.checkpoint(operation, key, "started", {"path": directory["path"]})
+            outcome = self.fs.remove_empty_directory(directory)
+            results.append({"path": directory["path"], "result": outcome})
+            self.checkpoint(operation, key, "confirmed", results[-1])
+        return results
+
+    def refresh_kept_hardlinks(self, snapshot):
+        removed = {}
+        for file in snapshot["files"]:
+            identity = json.loads(file["identity"])
+            current = self.db.one("SELECT deleted FROM files WHERE id=?", (file["id"],))
+            if identity["links"] > 1 and current and current["deleted"]:
+                key = identity["device"], identity["inode"]
+                removed[key] = removed.get(key, 0) + 1
+        for original in snapshot.get("kept_files", []):
+            if not original:
+                raise SafetyError("Kept version is missing from the reviewed plan")
+            file_id = original["id"]
+            file = self.db.one("SELECT * FROM files WHERE id=? AND deleted=0", (file_id,))
+            if (
+                not file
+                or not file["identity"]
+                or (file["path"], file["root_id"]) != (original["path"], original["root_id"])
+            ):
+                raise SafetyError("Kept version is unavailable after deletion")
+            expected = json.loads(original["identity"])
+            count = removed.get((expected["device"], expected["inode"]), 0)
+            actual = self.fs.inspect(file["root_id"], file["path"])
+            if not count:
+                if actual != expected:
+                    raise SafetyError("Kept version changed since preview; deletion refused")
+                continue
+            if (
+                any(actual[field] != expected[field] for field in ("device", "inode", "size", "mtime_ns"))
+                or actual["links"] != expected["links"] - count
+            ):
+                raise SafetyError("Kept hardlink changed beyond the verified removed links")
+            self.db.execute("UPDATE files SET identity=? WHERE id=?", (encode(actual), file_id))
 
     def checkpoint(self, operation_id, name, state, detail=None):
         self.db.execute(
@@ -330,6 +430,7 @@ class Executor:
                 for item_id in {r["media_id"] for r in related}:
                     files = self.catalog.files(item_id)
                     present = []
+                    present_paths = set()
                     for file in files:
                         if not file["root_id"] or not file["identity"]:
                             raise SafetyError(
@@ -339,15 +440,16 @@ class Executor:
                         if exists and self.fs.inspect(file["root_id"], file["path"]) != json.loads(file["identity"]):
                             raise SafetyError("Remaining media changed; resynchronize before availability repair")
                         present.append(exists)
+                        if exists:
+                            present_paths.add(file["source_path"])
                     remaining = remaining or any(present)
-                    root = self.db.one("SELECT kind FROM media WHERE id=?", (item_id,))
+                    root = self.db.one("SELECT kind,metadata FROM media WHERE id=?", (item_id,))
                     if root["kind"] == "movie" and present and all(present):
-                        has_deleted_parts = self.db.one(
-                            """SELECT f.id FROM files f JOIN media_files mf ON mf.file_id=f.id
-                            WHERE mf.media_id=? AND f.deleted=1 LIMIT 1""",
-                            (item_id,),
+                        editions = json.loads(root["metadata"]).get("Media", [])
+                        complete = complete or any(
+                            edition.get("Part") and all(part.get("file") in present_paths for part in edition["Part"])
+                            for edition in editions
                         )
-                        complete = complete or not has_deleted_parts
                 if snapshot["kind"] == "movie" and remaining and not complete:
                     raise SafetyError("A multipart movie remains partly available; verify Seerr status manually")
                 await self.integrations.get("seerr").availability(media_id, remaining, complete=complete)
@@ -404,7 +506,7 @@ class Executor:
                         encode(
                             {
                                 "simulation": True,
-                                "files": len(snapshot["files"]),
+                                "files": len(snapshot["files"]) + len(snapshot.get("sidecars", [])),
                                 "logical_bytes": snapshot["logical_bytes"],
                             }
                         ),
@@ -428,6 +530,7 @@ class Executor:
                 self.db.execute("UPDATE operations SET state='Executing',updated_at=? WHERE id=?", (now(), operation))
                 before = {f["root_id"]: os.statvfs(self.fs.root(f["root_id"])["path"]) for f in snapshot["files"]}
                 for file in snapshot["files"]:
+                    self.refresh_kept_hardlinks(snapshot)
                     if self.stopping or self.db.settings()["dry_run"]:
                         raise SafetyError("Deletion interrupted; remaining files require reconciliation")
                     if snapshot["integration_fingerprint"] != self.integration_fingerprint():
@@ -439,7 +542,9 @@ class Executor:
                     ):
                         raise SafetyError("Job cancelled; remaining files require reconciliation")
                     _, current_item, current_rule = self.candidate(candidate["id"])
-                    if self.engine.protection(current_item, current_rule, now()):
+                    if self.engine.protection(
+                        current_item, current_rule, now(), files=[file] if snapshot.get("manual") else None
+                    ):
                         raise SafetyError("Protection changed during execution; remaining files are blocked")
                     # Refresh playback before every physical deletion.
                     sessions = await self.integrations.get("plex").sessions()
@@ -466,6 +571,31 @@ class Executor:
                     self.checkpoint(
                         operation, "file:" + file["id"], "confirmed", {"path": file["path"], "bytes": file["size"]}
                     )
+                for sidecar in snapshot.get("sidecars", []):
+                    if self.stopping or self.db.settings()["dry_run"]:
+                        raise SafetyError("Sidecar cleanup stopped; remaining work requires reconciliation")
+                    if (
+                        job_id
+                        and self.db.one("SELECT cancel_requested FROM jobs WHERE id=?", (job_id,))["cancel_requested"]
+                    ):
+                        raise SafetyError("Job cancelled before sidecar cleanup")
+                    _, current_item, current_rule = self.candidate(candidate["id"])
+                    if self.fs.exists(sidecar["root_id"], sidecar["path"]) and self.engine.protection(
+                        current_item, current_rule, now(), files=[sidecar]
+                    ):
+                        raise SafetyError("Protection changed before sidecar cleanup")
+                    if await self.integrations.get("plex").sessions():
+                        raise SafetyError("Playback began before sidecar cleanup")
+                    self.checkpoint(operation, "file:" + sidecar["id"], "started", {"path": sidecar["path"]})
+                    if self.fs.exists(sidecar["root_id"], sidecar["path"]):
+                        self.fs.validate_sidecar_ownership(sidecar, snapshot)
+                        self.fs.unlink(sidecar)
+                    self.checkpoint(
+                        operation,
+                        "file:" + sidecar["id"],
+                        "confirmed",
+                        {"path": sidecar["path"], "bytes": sidecar["size"]},
+                    )
                 if snapshot["strategy"] == "remove":
                     for kind, parent in grouped:
                         inventory = await self.integrations.get(kind).files(parent)
@@ -476,6 +606,8 @@ class Executor:
                         self.checkpoint(operation, f"remove:{kind}:{parent}", "started")
                         await self.integrations.get(kind).remove(parent)
                         self.checkpoint(operation, f"remove:{kind}:{parent}", "confirmed")
+                self.refresh_kept_hardlinks(snapshot)
+                directory_results = self.cleanup_directories(operation, snapshot)
                 after = {root: os.statvfs(self.fs.root(root)["path"]) for root in before}
                 observed, seen_devices = 0, set()
                 for root_id, info in before.items():
@@ -488,6 +620,7 @@ class Executor:
                     "estimated_reclaimable": snapshot["estimated_reclaimable"],
                     "observed_free_space_delta": observed,
                     "observed_delta_is_attributable": False,
+                    "directories": directory_results,
                 }
                 self.db.execute(
                     "UPDATE operations SET state='Synchronizing',outcome=?,updated_at=? WHERE id=?",
@@ -529,13 +662,16 @@ class Executor:
             confirmed = {c["name"] for c in checkpoints if c["state"] == "confirmed"}
             # Reconciliation is read-only for ambiguous physical requests. Never reissue DELETE.
             all_absent = True
-            for file in snapshot["files"]:
+            for file in [*snapshot["files"], *snapshot.get("sidecars", [])]:
                 if self.fs.exists(file["root_id"], file["path"]):
                     all_absent = False
-                elif "file:" + file["id"] not in {c["name"] for c in checkpoints}:
+                elif "file:" + file["id"] not in {c["name"] for c in checkpoints} and not file["id"].startswith(
+                    "sidecar:"
+                ):
                     all_absent = False
                 else:
-                    self.db.execute("UPDATE files SET deleted=1 WHERE id=?", (file["id"],))
+                    if not file["id"].startswith("sidecar:"):
+                        self.db.execute("UPDATE files SET deleted=1 WHERE id=?", (file["id"],))
                     self.checkpoint(operation["id"], "file:" + file["id"], "confirmed", {"reconciled_absent": True})
             remove_pending = any(c["name"].startswith("remove:") and c["state"] != "confirmed" for c in checkpoints)
             if snapshot["strategy"] == "remove":
@@ -550,6 +686,8 @@ class Executor:
                 continue
             self.transition(candidate["id"], "Synchronizing")
             try:
+                self.refresh_kept_hardlinks(snapshot)
+                self.cleanup_directories(operation["id"], snapshot)
                 await self.synchronize(operation["id"], snapshot)
                 self.db.execute("UPDATE reconciliation SET state='resolved' WHERE id=?", (task["id"],))
             except Exception as exc:

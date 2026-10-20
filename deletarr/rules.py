@@ -115,7 +115,7 @@ class Engine:
     def __init__(self, db, catalog, filesystem):
         self.db, self.catalog, self.fs = db, catalog, filesystem
 
-    def protection(self, item, rule, at):
+    def protection(self, item, rule, at, files=None):
         settings = self.db.settings()
         reasons = []
         library = self.db.one("SELECT * FROM libraries WHERE id=?", (item["library_id"],))
@@ -161,10 +161,12 @@ class Engine:
                 ]
                 if request["season"] is None or request["season"] in season_numbers or item["kind"] == "show":
                     reasons.append("Recent Seerr request protection")
-        files = self.catalog.files(item["id"])
+        files = self.catalog.files(item["id"]) if files is None else files
         if not files:
             reasons.append("No verified physical media files")
         for file in files:
+            if self.db.one("SELECT file_id FROM file_protections WHERE file_id=?", (file["id"],)):
+                reasons.append("This physical version is protected")
             if not file["identity"] or not file["root_id"] or not file["path"]:
                 reasons.append("Missing or invalid path mapping")
             else:

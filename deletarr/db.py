@@ -96,9 +96,11 @@ class Database:
         # Refuse newer schemas rather than opening them with older runtime assumptions.
         exists = self.connection.execute("SELECT 1 FROM sqlite_master WHERE name='schema_version'").fetchone()
         if exists and (
-            self.connection.execute("SELECT COALESCE(MAX(version),0) FROM schema_version").fetchone()[0] > 4
+            self.connection.execute("SELECT COALESCE(MAX(version),0) FROM schema_version").fetchone()[0] > 5
         ):
             raise ValueError("Database is newer than this Deletarr version; restore a compatible backup")
+        if exists and self.connection.execute("SELECT COALESCE(MAX(version),0) FROM schema_version").fetchone()[0] < 5:
+            self.backup()
         self.connection.executescript(SCHEMA)
         with self.transaction() as c:
             c.execute("INSERT OR IGNORE INTO schema_version VALUES(1,?)", (now(),))
@@ -121,6 +123,15 @@ class Database:
                 c.execute("ALTER TABLE media ADD COLUMN last_playback INTEGER")
                 c.execute("ALTER TABLE watch_events ADD COLUMN completed INTEGER NOT NULL DEFAULT 0")
                 c.execute("INSERT INTO schema_version VALUES(4,?)", (now(),))
+            if not c.execute("SELECT 1 FROM schema_version WHERE version=5").fetchone():
+                c.execute(
+                    "CREATE TABLE manual_requests(candidate_id TEXT PRIMARY KEY REFERENCES candidates(id),file_ids TEXT NOT NULL,keep_file_ids TEXT NOT NULL)"
+                )
+                c.execute(
+                    "CREATE TABLE file_protections(file_id TEXT PRIMARY KEY REFERENCES files(id),created_at INTEGER NOT NULL)"
+                )
+                c.execute("UPDATE plans SET expires=0")
+                c.execute("INSERT INTO schema_version VALUES(5,?)", (now(),))
         os.chmod(self.path, 0o600)
 
     @contextlib.contextmanager

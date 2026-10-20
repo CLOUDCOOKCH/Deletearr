@@ -51,3 +51,5 @@ The named configuration volume survives container recreation. Do not remove
 it when updating the image. It contains the database, encryption key and
 administrator account. To update a preview, use your NAS UI's pull/recreate
 action while retaining that volume. No automatic image updater is configured.
+
+Library deletion/Versions update: pull `ghcr.io/cloudcookch/deletearr:preview` in UGOS Docker, then recreate the container with the existing Compose project, config volume, media mounts and media-access groups. Do not delete the project data. Schema 5 creates a private database backup before upgrading an existing installation and expires older deletion previews. Check the mode indicator, sync the library, then use Libraries → Browse → Delete or Libraries → Versions → Keep this version. Sidecars are listed in the review; folders are removed only when empty.
